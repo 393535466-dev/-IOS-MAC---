@@ -18,6 +18,7 @@
  * API：POST /api/task   GET /api/task/:id   GET /api/tasks
  */
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -514,8 +515,15 @@ document.getElementById('input').addEventListener('input',onInput);
 document.getElementById('input').addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.keyCode==13){e.preventDefault();submit()}});
 function toggleMic(){
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SR){document.getElementById('vhint').textContent='当前浏览器不支持语音输入，请用 Safari 或 Chrome';return}
-  var btn=document.getElementById('mic'),hint=document.getElementById('vhint');
+  var hint=document.getElementById('vhint'),btn=document.getElementById('mic');
+  // 检查安全上下文（HTTPS 或 localhost）——Web Speech API 必须在安全环境
+  if(!window.isSecureContext){
+    var httpsPort=Number(window.location.port||'8787')+1;
+    var httpsUrl='https://'+window.location.hostname+':'+httpsPort;
+    hint.innerHTML='<b>语音输入需要 HTTPS 安全环境</b><br>当前是 HTTP，浏览器禁止调用麦克风。<br>请用手机打开：<span style="color:#D85A30;font-weight:500">'+httpsUrl+'</span><br>首次打开点「高级 → 继续访问」信任证书即可。<br><span style="color:#888780">或直接点输入框，用键盘上的 🎤 语音输入（无需 HTTPS）</span>';
+    return;
+  }
+  if(!SR){hint.textContent='当前浏览器不支持语音输入，请用 Safari 或 Chrome';return}
   if(rec){rec.stop();return}
   rec=new SR();rec.lang='zh-CN';rec.continuous=false;rec.interimResults=true;
   rec.onstart=function(){btn.classList.add('on');btn.textContent='●';hint.textContent='正在听…请说话'};
@@ -536,8 +544,14 @@ function toggleMic(){
         .catch(function(){inp.value=raw;onInput();hint.textContent='规范失败，已用原语音执行';setTimeout(submit,500)});
     }else{hint.innerHTML='识别中：<span style="color:#888780">'+esc(interim)+'</span>'}
   };
-  rec.onerror=function(ev){hint.textContent='语音识别失败：'+(ev.error||'未知')};
-  rec.onend=function(){btn.classList.remove('on');btn.textContent='🎤';if(!hint.textContent.startsWith('识别'))hint.textContent='';rec=null};
+  rec.onerror=function(ev){
+    var msg=ev.error||'未知';
+    if(msg==='not-allowed'||msg==='service-not-allowed'){hint.innerHTML='⚠ 麦克风权限被拒绝。请在浏览器设置中允许此网站访问麦克风后重试。'}
+    else if(msg==='network'){hint.textContent='语音识别网络错误，请检查网络后重试'}
+    else if(msg==='no-speech'){hint.textContent='没听到你说什么，请再试一次'}
+    else{hint.textContent='语音识别失败：'+msg}
+  };
+  rec.onend=function(){btn.classList.remove('on');btn.textContent='🎤';if(!hint.textContent.startsWith('识别')&&!hint.textContent.startsWith('⚠')&&!hint.innerHTML.startsWith('<b>'))hint.textContent='';rec=null};
   rec.start();
 }
 async function loadHistory(){
@@ -571,6 +585,7 @@ async function poll(){
   }).join('');
   if(t.status==='processing'){document.getElementById('meta').textContent='已进行 '+((Date.now()-t.createdAt)/1000).toFixed(1)+' 秒…';return}
   clearInterval(timer);
+  document.getElementById('go').disabled=false;
   document.getElementById('meta').textContent='总耗时 '+((t.finishedAt-t.createdAt)/1000).toFixed(1)+' 秒';
   var box=document.getElementById('result');
   if(t.status==='success'){box.innerHTML='<div class="result ok"><b>任务完成</b><br>'+esc(t.result)+'</div><div class="meta">去旁边的 Mac 看看 — 任务已就位</div>'}
@@ -578,6 +593,19 @@ async function poll(){
   document.getElementById('done').style.display='block';
   loadHistory();
 }
+// 页面加载时检测语音可用性
+(function(){
+  var hint=document.getElementById('vhint'),mic=document.getElementById('mic');
+  if(window.isSecureContext){
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(SR){mic.style.borderColor='#D85A30';mic.style.color='#D85A30';hint.textContent='🎤 语音就绪，点击说话';}
+    else{mic.style.opacity='.4';hint.textContent='当前浏览器不支持语音，请用 Safari 或 Chrome';}
+  }else{
+    var httpsPort=Number(window.location.port||'8787')+1;
+    mic.style.opacity='.5';
+    hint.innerHTML='<span style="color:#BA7517">⚠ 当前为 HTTP，语音不可用。</span> <span style="cursor:pointer;color:#D85A30;text-decoration:underline" onclick="location.href=\'https://'+window.location.hostname+':'+httpsPort+'\'">点此切换到 HTTPS 开启语音 →</span>';
+  }
+})();
 loadHistory();
 </script></body></html>`;
 
@@ -681,13 +709,29 @@ const server = http.createServer((req, res) => {
 });
 
 load();
-server.listen(PORT, '0.0.0.0', () => {
+const HTTP_PORT = PORT;
+const HTTPS_PORT = Number(PORT) + 1;
+server.listen(HTTP_PORT, '0.0.0.0', () => {
   const ifaces = os.networkInterfaces();
   let lan = 'localhost';
   for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) lan = i.address;
   console.log('龙虾脑 v3 已启动');
-  console.log('  手机端（同 Wi-Fi）: http://' + lan + ':' + PORT);
-  console.log('  本机 / 看板:        http://localhost:' + PORT + '  /dashboard');
+  console.log('  手机端（文字输入）:  http://' + lan + ':' + HTTP_PORT);
+  // 尝试启动 HTTPS（语音输入需要安全上下文）
+  const certDir = path.join(__dirname, 'cert');
+  const certFile = path.join(certDir, 'cert.pem');
+  const keyFile = path.join(certDir, 'key.pem');
+  if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+    try {
+      const sslOpts = { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) };
+      https.createServer(sslOpts, server.listeners('request')[0]).listen(HTTPS_PORT, '0.0.0.0', () => {
+        console.log('  手机端（语音输入）:  https://' + lan + ':' + HTTPS_PORT + '  ⚠ 首次打开需点「高级→继续」信任证书');
+        console.log('  本机 / 看板:         https://localhost:' + HTTPS_PORT + '/dashboard');
+      });
+    } catch (e) { console.log('  HTTPS 启动失败（不影响文字输入）:', e.message); }
+  } else {
+    console.log('  ⚠ 未找到 cert/ 证书，语音输入不可用。运行 openssl 生成证书后重启。');
+  }
   console.log('  智能解析: ' + (process.env.LLM_API_KEY ? '大模型' : '增强规则引擎（可配 LLM_* 接真模型）'));
   console.log('  能力: search / play / open(应用/文件夹/网站) / rating / system(音量/截图/锁屏…) / note');
 });

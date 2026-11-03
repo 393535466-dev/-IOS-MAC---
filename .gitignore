@@ -13,3 +13,6 @@ npm-debug.log*
 
 # WorkBuddy 本地数据
 .workbuddy/
+
+# SSL 证书（自签名，不提交）
+cert/
