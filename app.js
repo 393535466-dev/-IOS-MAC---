@@ -1120,7 +1120,15 @@ h1{font-size:20px;font-weight:600;margin-bottom:4px}
     </div>
     <div class="btn-row">
       <button class="btn btn-ghost" onclick="copyPhone()">复制手机链接</button>
-      <button class="btn btn-ghost" onclick="resetToken()">重置令牌</button>
+      <button class="btn btn-ghost" onclick="resetToken()">重置为随机令牌</button>
+    </div>
+    <div class="field" style="margin-top:14px;border-top:1px solid #EEE;padding-top:14px">
+      <label>设置自定义密码（替换随机令牌）</label>
+      <input id="customPwd" placeholder="至少 4 位，例如 mymac2026" style="font-family:monospace">
+      <div class="hint">设置后，手机链接改用此密码（链接里 ?t= 即此密码），旧令牌立即失效。留空时按「重置为随机令牌」会重新生成随机串。</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="setCustomToken()">保存自定义密码</button>
     </div>
   </div>
   <div id="tokenWarn" style="display:none;font-size:12px;color:#999;line-height:1.6">
@@ -1219,7 +1227,15 @@ async function loadToken(){
   }catch(e){ document.getElementById('tokenStatus').innerHTML='读取失败：'+e.message; }
 }
 function copyPhone(){var v=document.getElementById('phoneLink').value;if(navigator.clipboard)navigator.clipboard.writeText(v);else{document.getElementById('phoneLink').select();document.execCommand('copy');}}
-async function resetToken(){ if(!confirm('重置后，所有手机需重新用新链接连接。确定重置？'))return; var r=await lbFetch('/api/auth/reset',{method:'POST'});var d=await r.json();if(d.ok){document.getElementById('tokenVal').value=d.token;document.getElementById('phoneLink').value=d.phoneLink;alert('已重置。请重新复制手机链接并加到主屏幕。');}}
+async function resetToken(){ if(!confirm('重置后，所有手机需重新用新链接连接。确定重置？'))return; var r=await lbFetch('/api/auth/reset',{method:'POST'});var d=await r.json();if(d.ok){document.getElementById('tokenVal').value=d.token;document.getElementById('phoneLink').value=d.phoneLink;alert('已重置为随机令牌。请重新复制手机链接并加到主屏幕。');}}
+async function setCustomToken(){
+  var p=document.getElementById('customPwd').value.trim();
+  if(p && p.length<4){alert('密码至少 4 位');return;}
+  var r=await lbFetch('/api/auth/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:p})});
+  var d=await r.json();
+  if(d && d.ok){document.getElementById('tokenVal').value=d.token;document.getElementById('phoneLink').value=d.phoneLink;document.getElementById('customPwd').value='';alert(d.random?'已重置为随机令牌。':'已设置为自定义密码。请重新复制手机链接并加到主屏幕。');}
+  else{alert('设置失败');}
+}
 load();
 loadToken();
 </script></body></html>`;
@@ -1236,9 +1252,23 @@ const server = http.createServer((req, res) => {
     }
     if (url.pathname === '/api/auth/reset' && req.method === 'POST') {
       if (!isLocalhost(req) && !checkAuth(url, req)) { res.statusCode = 401; return res.end(JSON.stringify({ error: 'unauthorized' })); }
-      AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
-      try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
-      return res.end(JSON.stringify({ ok: true, token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
+      let body = '';
+      req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+      req.on('end', () => {
+        let custom = '';
+        try { const d = JSON.parse(body || '{}'); custom = (d.token || '').toString().trim(); } catch (e) {}
+        if (custom.length < 4) {
+          // 未提供自定义密码 → 重新生成随机令牌（原有行为）
+          AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
+          try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+          return res.end(JSON.stringify({ ok: true, random: true, token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
+        }
+        // 用户自定义密码
+        AUTH_TOKEN = custom;
+        try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+        return res.end(JSON.stringify({ ok: true, random: false, token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
+      });
+      return;
     }
     if (!checkAuth(url, req)) {
       res.statusCode = 401;
