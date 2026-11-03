@@ -48,7 +48,7 @@ const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封�
 /* ---------------- 字典：应用 / 文件夹 / 站点 ---------------- */
 const APPS = {
   '微信': 'WeChat', 'wechat': 'WeChat', 'qq': 'QQ', 'QQ': 'QQ',
-  'safari': 'Safari', '浏览器': 'Safari', 'chrome': 'Google Chrome', '谷歌浏览器': 'Google Chrome',
+  'safari': 'Safari', '浏览器': 'Safari', 'chrome': 'Google Chrome', '谷歌浏览器': 'Google Chrome', 'google浏览器': 'Google Chrome', 'chrome浏览器': 'Google Chrome', '谷歌': 'Google Chrome',
   '邮件': 'Mail', '备忘录': 'Notes', '计算器': 'Calculator',
   '访达': 'Finder', 'finder': 'Finder', '终端': 'Terminal', 'terminal': 'Terminal',
   'vscode': 'Visual Studio Code', '代码编辑器': 'Visual Studio Code', 'vs code': 'Visual Studio Code',
@@ -199,7 +199,9 @@ function detectSite(text) {
 }
 function detectApp(text) {
   const lower = text.toLowerCase();
-  for (const cn in APPS) if (lower.includes(cn.toLowerCase())) return { name: cn, key: APPS[cn] };
+  // 按 key 长度从长到短匹配，避免短词(如"浏览器")抢先匹配长词(如"谷歌浏览器")
+  const keys = Object.keys(APPS).sort((a, b) => b.length - a.length);
+  for (const cn of keys) if (lower.includes(cn.toLowerCase())) return { name: cn, key: APPS[cn] };
   return null;
 }
 // 把 LLM / 用户输入的中文或各种写法统一映射成系统能识别的应用名（如 微信→WeChat、备忘录→Notes）
@@ -335,9 +337,9 @@ function localParse(text) {
     }
     const p = detectSite(raw);
     if (p) return { action: 'open', sub: 'open_site', target: SITES[p].label, platform: p, contentType: null, raw, source: 'rule' };
-    // 兜底：尝试当应用名
+    // 兜底：尝试当应用名（低置信，交给 LLM 更准）
     const kw = extractKeyword(raw);
-    if (kw) return { action: 'open', sub: 'open_app', target: kw, app: kw, platform: null, contentType: null, raw, source: 'rule' };
+    if (kw) return { action: 'open', sub: 'open_app', target: kw, app: kw, platform: null, contentType: null, raw, source: 'rule', lowConfidence: true };
   }
 
   // 4. 查评分
@@ -375,7 +377,7 @@ async function callLLM(text) {
         model: cfg.model, temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName,contact}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)/send_msg(给指定联系人发消息)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字/要发送的消息正文)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=type/send_msg时指定目标应用(如"微信""备忘录""终端")，无指定应用时app=null；send_msg时默认app="微信"。\ncontact仅在action=send_msg时使用，为收信人姓名(如"张三")。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n发消息给联系人如"发微信给张三：晚点到"解析为send_msg，contact="张三",target="晚点到",app="微信"。\n只输出JSON，不要解释。' },
+          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName,contact}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)/send_msg(给指定联系人发消息)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字/要发送的消息正文)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=open/open_app/type/send_msg时指定目标应用名(如"浏览器"→Safari、"谷歌浏览器/Chrome"→Google Chrome、"微信"→WeChat、"WorkBuddy"、"豆包"→DoubaoWork、"备忘录"→Notes、"终端"→Terminal)，无指定应用时app=null；send_msg时默认app="微信"。打开浏览器类：默认浏览器=Safari，谷歌浏览器/Chrome=Google Chrome。\ncontact仅在action=send_msg时使用，为收信人姓名(如"张三")。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n发消息给联系人如"发微信给张三：晚点到"解析为send_msg，contact="张三",target="晚点到",app="微信"。\n只输出JSON，不要解释。' },
           { role: 'user', content: text },
         ],
       }),
@@ -388,9 +390,14 @@ async function callLLM(text) {
 
 async function parseInstruction(text) {
   const raw = (text || '').trim();
+  // 先跑规则引擎：打开/系统/输入/发消息等明确指令秒级响应，避免每条都等待 LLM（既慢又易翻译错）
+  const rule = localParse(raw);
+  if (rule && !rule.lowConfidence) { rule.source = 'rule'; return rule; }
+  // 规则拿不准 → 才交给 LLM 解析
   const llm = await callLLM(raw);
   if (llm && llm.action) { llm.raw = raw; llm.source = 'llm'; return llm; }
-  return localParse(raw);
+  // LLM 也失败 → 退回规则（哪怕低置信）
+  return rule || localParse(raw);
 }
 
 function describeIntent(it) {
@@ -692,7 +699,7 @@ const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--bg:#fff;--fg:#1A1A1A;--muted:#888;--line:#E5E5E5;--card:#F7F7F7;--accent:#1A1A1A}
 body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-.main{flex:1;overflow-y:auto;padding:20px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
+.main{flex:1;overflow-y:auto;padding:214px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
 .voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 0 16px}
 .mic-btn{width:80px;height:80px;border-radius:50%;border:none;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.15);transition:transform .15s;position:relative;-webkit-user-select:none;user-select:none}
 .mic-btn svg{width:30px;height:30px;fill:#fff}
@@ -738,15 +745,21 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
 .send-btn:active{opacity:.7}
 .send-btn svg{width:18px;height:18px;fill:#fff}
-.dash-fab{position:fixed;top:12px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
-.cfg-fab{position:fixed;top:12px;right:56px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
-.trackpad-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:14px}
+.dash-fab{position:absolute;top:8px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
+.cfg-fab{position:absolute;top:8px;right:62px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 14px;box-sizing:border-box;margin:0}
 .trackpad-title{font-size:12px;color:#888;margin-bottom:8px;text-align:center}
-.trackpad{position:relative;width:100%;height:170px;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
+.trackpad{position:relative;width:100%;height:160px;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
 .trackpad-hint{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:#aaa;font-size:12px;pointer-events:none}
 </style></head><body>
-<a href="/config" class="cfg-fab" target="_blank">配置</a>
-<a href="/dashboard" class="dash-fab" target="_blank">看板</a>
+<div class="topbar" id="topbar">
+  <div class="trackpad-title">🖱 鼠标控制（触控板）</div>
+  <a href="/config" class="cfg-fab" target="_blank">配置</a>
+  <a href="/dashboard" class="dash-fab" target="_blank">看板</a>
+  <div class="trackpad" id="trackpad">
+    <div class="trackpad-hint">手指滑动移动光标 · 轻点=点击</div>
+  </div>
+</div>
 <div class="main" id="main">
   <div class="voice-area">
     <button class="mic-btn" id="mic" type="button">
@@ -756,12 +769,6 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
     <div class="mic-hint" id="micHint"></div>
   </div>
   <div class="status-area" id="statusArea"></div>
-  <div class="trackpad-card">
-    <div class="trackpad-title">🖱 鼠标控制（触控板）</div>
-    <div class="trackpad" id="trackpad">
-      <div class="trackpad-hint">手指滑动移动光标 · 轻点=点击</div>
-    </div>
-  </div>
 </div>
 
 <div id="lock" style="display:none;position:fixed;inset:0;background:rgba(255,255,255,.97);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:24px">
