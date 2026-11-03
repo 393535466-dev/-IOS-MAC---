@@ -23,6 +23,22 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
+const { execSync } = require('child_process');
+// ---- 鼠标控制（手机触控板 → 远程控制 Mac 光标）----
+const MOUSECTL = path.join(__dirname, 'bin', 'mousectl.py');
+const MOUSE_SENS = 2.5; // 触控板灵敏度：手指滑动 1px → Mac 光标移动 2.5px
+const mouseState = { x: 0, y: 0, w: 0, h: 0, ready: false };
+function initMouse() {
+  try {
+    const p = execSync(`python3 "${MOUSECTL}" get`).toString().trim().split(/\s+/);
+    const s = execSync(`python3 "${MOUSECTL}" screensize`).toString().trim().split(/\s+/);
+    mouseState.x = parseInt(p[0]) || 0; mouseState.y = parseInt(p[1]) || 0;
+    mouseState.w = parseInt(s[0]) || 1920; mouseState.h = parseInt(s[1]) || 1080;
+    mouseState.ready = true;
+    console.log(`[mouse] 初始光标 ${mouseState.x},${mouseState.y} 屏幕 ${mouseState.w}x${mouseState.h}`);
+  } catch (e) { console.log('[mouse] 初始化失败:', e.message); }
+}
+initMouse();
 
 const PORT = process.env.PORT || 8787;
 const DATA_FILE = path.join(__dirname, 'tasks.json');
@@ -223,6 +239,21 @@ function localParse(text) {
     }
   }
 
+  // 0.5 发消息给指定联系人：发微信给X：Y / 给X发微信：Y / 发消息给X：Y
+  {
+    const isSMS = /短信|iMessage|信息/.test(raw);
+    const appKey = isSMS ? 'Messages' : 'WeChat';
+    const appName = isSMS ? '信息' : '微信';
+    let contact = null, msg = null;
+    const m1 = raw.match(/发(?:微信|消息|短信|信息)给(.+?)[：:：](.+)/);
+    const m2 = raw.match(/给(.+?)发(?:微信|消息|信息)[:：](.+)/);
+    if (m1) { contact = m1[1].trim(); msg = m1[2].trim(); }
+    else if (m2) { contact = m2[1].trim(); msg = m2[2].trim(); }
+    if (contact && msg) {
+      return { action: 'send_msg', target: msg, app: appKey, appName, contact, raw, source: 'rule' };
+    }
+  }
+
   // 1. 系统操作
   const sys = detectSystem(raw);
   if (sys) return { action: 'system', sub: sys.sub, target: null, platform: null, contentType: null, raw, source: 'rule' };
@@ -315,7 +346,7 @@ async function callLLM(text) {
         model: cfg.model, temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=type时指定目标应用(如"微信""备忘录""终端")，无指定应用时app=null。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n只输出JSON，不要解释。' },
+          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName,contact}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)/send_msg(给指定联系人发消息)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字/要发送的消息正文)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=type/send_msg时指定目标应用(如"微信""备忘录""终端")，无指定应用时app=null；send_msg时默认app="微信"。\ncontact仅在action=send_msg时使用，为收信人姓名(如"张三")。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n发消息给联系人如"发微信给张三：晚点到"解析为send_msg，contact="张三",target="晚点到",app="微信"。\n只输出JSON，不要解释。' },
           { role: 'user', content: text },
         ],
       }),
@@ -342,6 +373,7 @@ function describeIntent(it) {
       return '系统操作：' + (map[it.sub] || it.sub);
     }
     case 'note': return '记到备忘录：「' + (it.target || '') + '」';
+    case 'send_msg': return '发' + (it.appName || '微信') + '给「' + (it.contact || '') + '」：「' + (it.target || '') + '」';
     case 'type': return '在「' + (it.appName || it.app || '') + '」里输入：「' + (it.target || '') + '」';
     case 'open':
       if (it.sub === 'open_app') return '打开应用 ' + (it.target || '');
@@ -415,6 +447,7 @@ function planText(it) {
     case 'system': return { volume_up: 'osascript 调高系统音量 +10', volume_down: 'osascript 调低系统音量 -10', mute: 'osascript 静音', brightness: '打开「显示设置」', screenshot: 'screencapture 截图保存到桌面', lock: '调用 CGSession 锁屏', trash: '高危操作，提示用户手动确认', settings: '打开系统设置' }[it.sub];
     case 'note': return '把内容写入剪贴板 → 打开备忘录 → 提示粘贴';
     case 'type': return `open -a "${it.app}" → 等待 1.5s → pbcopy 写入剪贴板 → osascript 模拟 Cmd+V 粘贴`;
+    case 'send_msg': return `open -a "${it.app || 'WeChat'}" → Cmd+F 搜「${it.contact}」→ 回车进会话 → 粘贴消息 → 回车发送`;
     case 'open':
       if (it.sub === 'open_app') return `open -a "${it.app}"`;
       if (it.sub === 'open_folder') return `open ${it.folder}`;
@@ -510,6 +543,37 @@ async function runTask(t) {
               execNote = result = '输入失败：' + (e2.message || '未知错误') + '。文字已复制到剪贴板，请手动按 Cmd+V';
             }
           }
+        }
+      } else if (it.action === 'send_msg') {
+        const appKey = it.app || 'WeChat';
+        const realName = resolveApp(appKey);
+        const contact = String(it.contact || '');
+        const msg = String(it.target || '');
+        await sh(`open -a "${realName}"`);
+        await sleep(2000);
+        try { await sh(`osascript -e 'tell application "${realName}" to activate'`); } catch (e) {}
+        await sleep(500);
+        const hasPermission = await checkAccessibility();
+        if (!hasPermission) {
+          await openAccessibilityPrefs();
+          execNote = result = '检测到辅助功能未授权，已自动打开系统设置。授权后重新执行即可自动发送。';
+          t.needPermission = true;
+        } else {
+          // 1) 聚焦搜索（WeChat Mac: Cmd+F；信息 App 同样适用）
+          await sh(`osascript -e 'tell application "System Events" to keystroke "f" using command down'`);
+          await sleep(700);
+          // 2) 粘贴联系人名并回车打开首个匹配会话
+          const cEsc = contact.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          await sh(`osascript -e 'set the clipboard to "${cEsc}"' -e 'tell application "System Events" to keystroke "v" using command down'`);
+          await sleep(1000);
+          await sh(`osascript -e 'tell application "System Events" to key code 36'`);
+          await sleep(1200);
+          // 3) 粘贴消息并发送（回车）
+          const mEsc = msg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          await sh(`osascript -e 'set the clipboard to "${mEsc}"' -e 'tell application "System Events" to keystroke "v" using command down'`);
+          await sleep(500);
+          await sh(`osascript -e 'tell application "System Events" to key code 36'`);
+          execNote = result = `已向「${contact}」发送${it.appName || '微信'}：「${msg}」`;
         }
       } else if (it.action === 'open') {
         if (it.sub === 'open_app') { await sh(`open -a "${resolveApp(it.app)}"`); execNote = result = '已打开应用：' + it.target; }
@@ -647,6 +711,10 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .send-btn svg{width:18px;height:18px;fill:#fff}
 .dash-fab{position:fixed;top:12px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
 .cfg-fab{position:fixed;top:12px;right:56px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
+.trackpad-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin-top:14px}
+.trackpad-title{font-size:12px;color:#888;margin-bottom:8px;text-align:center}
+.trackpad{position:relative;width:100%;height:170px;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
+.trackpad-hint{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:#aaa;font-size:12px;pointer-events:none}
 </style></head><body>
 <a href="/config" class="cfg-fab" target="_blank">配置</a>
 <a href="/dashboard" class="dash-fab" target="_blank">看板</a>
@@ -659,13 +727,20 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
     <div class="mic-hint" id="micHint"></div>
   </div>
   <div class="status-area" id="statusArea"></div>
+  <div class="trackpad-card">
+    <div class="trackpad-title">🖱 鼠标控制（触控板）</div>
+    <div class="trackpad" id="trackpad">
+      <div class="trackpad-hint">手指滑动移动光标 · 轻点=点击</div>
+    </div>
+  </div>
 </div>
 
 <div class="bottom-bar">
   <div class="chips">
     <button class="chip" onclick="quickSend('打开微信')">打开微信</button>
     <button class="chip" onclick="quickSend('截个屏')">截个屏</button>
-    <button class="chip" onclick="quickSend('音量调大')">音量调大</button>
+    <button class="chip" onclick="quickSend('锁屏')">锁屏</button>
+    <button class="chip" onclick="quickSend('发微信给张三：晚点到')">发微信给张三</button>
     <button class="chip" onclick="quickSend('打开微信——输入你好')">微信输入你好</button>
     <button class="chip" onclick="quickSend('搜索《流浪地球》预告片并播放')">搜电影</button>
   </div>
@@ -814,6 +889,21 @@ let _proc='';
 (async function(){try{var d=await (await fetch('/api/accessibility')).json();if(d.processName)_proc=d.processName;}catch(e){}})();
 async function openMacSettings(){try{await fetch('/api/accessibility',{method:'POST'});}catch(e){}}
 initVoice();
+
+/* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
+(function(){
+  var pad=document.getElementById('trackpad');
+  if(!pad) return;
+  var lastX=0,lastY=0,moved=false,pendX=0,pendY=0,timer=null;
+  function flush(){
+    if(pendX===0&&pendY===0) return;
+    var dx=pendX,dy=pendY; pendX=0; pendY=0;
+    fetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dx:dx,dy:dy})});
+  }
+  pad.addEventListener('touchstart',function(e){e.preventDefault();var t=e.touches[0];lastX=t.clientX;lastY=t.clientY;moved=false;},{passive:false});
+  pad.addEventListener('touchmove',function(e){e.preventDefault();var t=e.touches[0];var dx=t.clientX-lastX,dy=t.clientY-lastY;lastX=t.clientX;lastY=t.clientY;if(Math.abs(dx)>2||Math.abs(dy)>2)moved=true;pendX+=dx;pendY+=dy;if(!timer)timer=setInterval(flush,30);},{passive:false});
+  pad.addEventListener('touchend',function(e){e.preventDefault();if(timer){clearInterval(timer);timer=null;}flush();if(!moved){fetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tap:true})});}});
+})();
 </script></body></html>`;
 
 /* ---------------- 运营看板 ---------------- */
@@ -1107,6 +1197,30 @@ const server = http.createServer((req, res) => {
       } catch {}
       res.end(JSON.stringify({ granted: ok, processName }));
     })();
+    return;
+  }
+  // 鼠标控制：手机触控板 → 移动/点击 Mac 光标
+  if (req.method === 'POST' && url.pathname === '/api/mouse') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const d = JSON.parse(body || '{}');
+        if (!mouseState.ready) return res.end(JSON.stringify({ ok: false, error: 'mouse not ready' }));
+        if (d.tap || d.click) {
+          await sh(`python3 "${MOUSECTL}" click`);
+          return res.end(JSON.stringify({ ok: true, action: 'click', x: Math.round(mouseState.x), y: Math.round(mouseState.y) }));
+        }
+        if (typeof d.dx === 'number' || typeof d.dy === 'number') {
+          const dx = (d.dx || 0) * MOUSE_SENS, dy = (d.dy || 0) * MOUSE_SENS;
+          mouseState.x = Math.max(0, Math.min(mouseState.w, mouseState.x + dx));
+          mouseState.y = Math.max(0, Math.min(mouseState.h, mouseState.y + dy));
+          await sh(`python3 "${MOUSECTL}" move ${Math.round(mouseState.x)} ${Math.round(mouseState.y)}`);
+          return res.end(JSON.stringify({ ok: true, action: 'move', x: Math.round(mouseState.x), y: Math.round(mouseState.y) }));
+        }
+        res.end(JSON.stringify({ ok: false, error: 'invalid payload' }));
+      } catch (e) { res.statusCode = 500; res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
     return;
   }
   if (req.method === 'POST' && url.pathname === '/api/accessibility') {
