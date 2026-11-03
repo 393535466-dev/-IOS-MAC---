@@ -752,8 +752,9 @@ const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-
 <title>龙虾脑</title><style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 :root{--bg:#fff;--fg:#1A1A1A;--muted:#888;--line:#E5E5E5;--card:#F7F7F7;--accent:#1A1A1A}
-body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
-.main{flex:1;overflow-y:auto;padding:214px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
+html,body{height:100%;overflow:hidden}
+body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;position:fixed;inset:0;width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.main{flex:1;min-height:0;overflow-y:auto;padding:12px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
 .voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 0 16px}
 .mic-btn{width:80px;height:80px;border-radius:50%;border:none;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.15);transition:transform .15s;position:relative;-webkit-user-select:none;user-select:none}
 .mic-btn svg{width:30px;height:30px;fill:#fff}
@@ -801,17 +802,34 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .send-btn svg{width:18px;height:18px;fill:#fff}
 .dash-fab{position:absolute;top:8px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
 .cfg-fab{position:absolute;top:8px;right:62px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
-.topbar{position:fixed;top:0;left:0;right:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 14px;box-sizing:border-box;margin:0}
+.topbar{position:relative;flex-shrink:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 14px;box-sizing:border-box;margin:0}
 .trackpad-title{font-size:12px;color:#888;margin-bottom:8px;text-align:center}
-.trackpad{position:relative;width:100%;height:160px;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
+.pad-row{display:flex;gap:10px;align-items:stretch;height:clamp(110px,20dvh,160px)}
+.trackpad{position:relative;flex:1;height:100%;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
 .trackpad-hint{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:#aaa;font-size:12px;pointer-events:none}
+.wheel{width:58px;flex-shrink:0;height:100%;display:flex;flex-direction:column;gap:4px;touch-action:none}
+.wheel-btn{height:28px;flex-shrink:0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#555;font-size:15px;font-family:inherit;cursor:pointer;line-height:1}
+.wheel-btn:active{background:var(--accent);color:#fff}
+.wheel-track{position:relative;flex:1;min-height:0;background:#EDEDED;border-radius:8px;overflow:hidden;touch-action:none}
+.wheel-knob{position:absolute;left:7px;right:7px;height:24px;top:50%;transform:translateY(-50%);border-radius:6px;background:#fff;border:1px solid #CCC;box-shadow:0 1px 3px rgba(0,0,0,.12);pointer-events:none}
+.wheel-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#AAA;font-size:10px;line-height:1.45;pointer-events:none}
 </style></head><body>
 <div class="topbar" id="topbar">
-  <div class="trackpad-title">🖱 鼠标控制（触控板）</div>
+  <div class="trackpad-title">鼠标控制（触控板 · 滚轮）</div>
   <a href="/config" class="cfg-fab" target="_blank">配置</a>
   <a href="/dashboard" class="dash-fab" target="_blank">看板</a>
-  <div class="trackpad" id="trackpad">
-    <div class="trackpad-hint">手指滑动移动光标 · 轻点=点击</div>
+  <div class="pad-row">
+    <div class="trackpad" id="trackpad">
+      <div class="trackpad-hint">手指滑动移动光标 · 轻点=点击</div>
+    </div>
+    <div class="wheel">
+      <button class="wheel-btn" id="wheelUp" type="button" aria-label="向上滚动">▲</button>
+      <div class="wheel-track" id="wheelTrack">
+        <div class="wheel-knob" id="wheelKnob"></div>
+        <div class="wheel-hint">上滑向上<br>下滑向下</div>
+      </div>
+      <button class="wheel-btn" id="wheelDown" type="button" aria-label="向下滚动">▼</button>
+    </div>
   </div>
 </div>
 <div class="main" id="main">
@@ -1005,6 +1023,53 @@ initVoice();
   pad.addEventListener('touchstart',function(e){e.preventDefault();var t=e.touches[0];lastX=t.clientX;lastY=t.clientY;moved=false;},{passive:false});
   pad.addEventListener('touchmove',function(e){e.preventDefault();var t=e.touches[0];var dx=t.clientX-lastX,dy=t.clientY-lastY;lastX=t.clientX;lastY=t.clientY;if(Math.abs(dx)>2||Math.abs(dy)>2)moved=true;pendX+=dx;pendY+=dy;if(!timer)timer=setInterval(flush,30);},{passive:false});
   pad.addEventListener('touchend',function(e){e.preventDefault();if(timer){clearInterval(timer);timer=null;}flush();if(!moved){lbFetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tap:true})});}});
+})();
+
+/* ---- 固定顶部控制板：软键盘弹出时也不被顶出屏幕 ---- */
+/* 控制板已是 body(flex) 的首个固定块，不再用 position:fixed；
+   再用 visualViewport 把 body 对齐到「键盘上方」的可见区，
+   并持续把页面滚回原点，彻底避免 iOS 把整页上推。 */
+(function(){
+  var body=document.body, vv=window.visualViewport, raf=null;
+  function fit(){
+    if(vv){
+      body.style.height=vv.height+'px';
+      body.style.transform='translateY('+(vv.offsetTop||0)+'px)';
+    }
+    if(window.scrollX||window.scrollY) window.scrollTo(0,0);
+  }
+  function schedule(){ if(raf) return; raf=requestAnimationFrame(function(){raf=null;fit();}); }
+  if(vv){ vv.addEventListener('resize',schedule); vv.addEventListener('scroll',schedule); }
+  window.addEventListener('resize',schedule);
+  window.addEventListener('focusin',function(){schedule();setTimeout(schedule,300);setTimeout(schedule,600);});
+  fit();
+})();
+
+/* ---- 滚轮：上下滑动 / 单步按钮 → Mac 页面滚动 ---- */
+(function(){
+  var track=document.getElementById('wheelTrack');
+  var knob=document.getElementById('wheelKnob');
+  var up=document.getElementById('wheelUp');
+  var down=document.getElementById('wheelDown');
+  if(!track) return;
+  function send(n){ lbFetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scroll:n})}); }
+  if(up) up.addEventListener('click',function(){send(3);});
+  if(down) down.addEventListener('click',function(){send(-3);});
+  var lastY=0,pend=0,timer=null,off=0;
+  function flush(){
+    if(pend===0) return;
+    var n=Math.max(-20,Math.min(20,Math.round(-pend*0.22))); pend=0;
+    if(n!==0) send(n);
+  }
+  function resetKnob(){ off=0; if(knob) knob.style.top='50%'; }
+  track.addEventListener('touchstart',function(e){e.preventDefault();var t=e.touches[0];lastY=t.clientY;},{passive:false});
+  track.addEventListener('touchmove',function(e){
+    e.preventDefault();var t=e.touches[0];var dy=t.clientY-lastY;lastY=t.clientY;pend+=dy;
+    off=Math.max(-30,Math.min(30,off+dy*0.5)); if(knob) knob.style.top=(50+off)+'%';
+    if(!timer) timer=setInterval(flush,45);
+  },{passive:false});
+  track.addEventListener('touchend',function(e){e.preventDefault();if(timer){clearInterval(timer);timer=null;}flush();resetKnob();},{passive:false});
+  track.addEventListener('touchcancel',function(){if(timer){clearInterval(timer);timer=null;}flush();resetKnob();});
 })();
 </script></body></html>`;
 
@@ -1406,6 +1471,11 @@ const server = http.createServer((req, res) => {
         if (d.tap || d.click) {
           await sh(`python3 "${MOUSECTL}" click`);
           return res.end(JSON.stringify({ ok: true, action: 'click', x: Math.round(mouseState.x), y: Math.round(mouseState.y) }));
+        }
+        if (typeof d.scroll === 'number' && d.scroll !== 0) {
+          const n = Math.max(-30, Math.min(30, Math.round(d.scroll)));
+          await sh(`python3 "${MOUSECTL}" scroll ${n}`);
+          return res.end(JSON.stringify({ ok: true, action: 'scroll', amount: n }));
         }
         if (typeof d.dx === 'number' || typeof d.dy === 'number') {
           const dx = (d.dx || 0) * MOUSE_SENS, dy = (d.dy || 0) * MOUSE_SENS;

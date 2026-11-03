@@ -7,6 +7,7 @@
 #   python3 mousectl.py move <x> <y>      移动光标到绝对坐标
 #   python3 mousectl.py click              在当前位置左键单击
 #   python3 mousectl.py click <x> <y>     移动后左键单击
+#   python3 mousectl.py scroll <n>        滚轮：正数向上滚、负数向下滚（单位：行）
 import sys, time, ctypes
 
 cg = ctypes.CDLL('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
@@ -31,11 +32,15 @@ cg.CGEventPost.argtypes = [ctypes.c_int, ctypes.c_void_p]
 cg.CGMainDisplayID.restype = ctypes.c_uint
 cg.CGDisplayBounds.restype = CGRect
 cg.CGDisplayBounds.argtypes = [ctypes.c_uint]
+# 滚轮事件：CGEventCreateScrollWheelEvent(source, units, wheelCount, wheel1, ...)
+cg.CGEventCreateScrollWheelEvent.restype = ctypes.c_void_p
+cg.CGEventCreateScrollWheelEvent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint, ctypes.c_int]
 
 kCGEventLeftMouseDown = 1
 kCGEventLeftMouseUp = 2
 kCGHIDEventTap = 0
 kCGMouseButtonLeft = 0
+kCGScrollEventUnitLine = 1   # 按「行」滚动（正值向上、负值向下）
 
 def get_pos():
     ev = cg.CGEventCreate(None)
@@ -55,13 +60,18 @@ def click(x=None, y=None):
     up = cg.CGEventCreateMouseEvent(None, kCGEventLeftMouseUp, p, kCGMouseButtonLeft)
     cg.CGEventPost(kCGHIDEventTap, up)
 
+def scroll(amount):
+    # 正值向上滚（看到上方内容），负值向下滚
+    ev = cg.CGEventCreateScrollWheelEvent(None, kCGScrollEventUnitLine, 1, int(amount))
+    cg.CGEventPost(kCGHIDEventTap, ev)
+
 def screensize():
     r = cg.CGDisplayBounds(cg.CGMainDisplayID())
     return int(r.size.width), int(r.size.height)
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        sys.stderr.write("usage: mousectl.py <get|screensize|move x y|click [x y]>\n")
+        sys.stderr.write("usage: mousectl.py <get|screensize|move x y|click [x y]|scroll n>\n")
         sys.exit(1)
     cmd = sys.argv[1]
     if cmd == "get":
@@ -75,6 +85,8 @@ if __name__ == "__main__":
             click(float(sys.argv[2]), float(sys.argv[3]))
         else:
             click()
+    elif cmd == "scroll":
+        scroll(int(float(sys.argv[2])))
     else:
         sys.stderr.write("unknown command: %s\n" % cmd)
         sys.exit(1)
