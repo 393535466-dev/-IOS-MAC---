@@ -1,0 +1,16 @@
+{
+  "name": "lobsterbrain",
+  "version": "1.0.0",
+  "description": "龙虾脑 LobsterBrain —— 手机一句话/语音遥控 Mac 的最小可运行 Demo。自然语言指令 → 智能意图解析 → 驱动 Mac 执行 → 手机端实时回传状态与结果，含运营数据看板。",
+  "main": "app.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": ["mac", "automation", "natural-language", "voice-control", "demo", "agent", "lobsterbrain"],
+  "license": "MIT",
+  "author": "yangx"
+}

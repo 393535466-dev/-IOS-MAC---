@@ -1,0 +1,15 @@
+# 运行时数据（自动生成）
+tasks.json
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+
+# 截图产物
+龙虾脑截图_*.png
+
+# WorkBuddy 本地数据
+.workbuddy/
