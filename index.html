@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>龙虾脑 LobsterBrain · 手机遥控 Mac 的自然语言执行入口</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --color-ember:#ff5900;
+    --color-abyss:#000710;
+    --color-carbon:#15191e;
+    --color-ink:#000000;
+    --color-paper:#ffffff;
+    --color-fog:#f3f3f7;
+    --color-mist:#b9bbc6;
+    --color-steel:#8b8d98;
+    --color-pewter:#6f737b;
+    --color-graphite:#60646c;
+    --font-inter:'Inter',ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    --radius-md:6px;
+    --radius-xl:12px;
+    --page-max:1200px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    font-family:var(--font-inter);
+    color:var(--color-ink);
+    background:var(--color-paper);
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  /* Global negative tracking signature */
+  h1,h2,h3,h4,p,a,li,span,button,code,th,td{
+    letter-spacing:-0.01em;
+  }
+  a{color:inherit;text-decoration:none;}
+  .wrap{max-width:var(--page-max);margin:0 auto;padding:0 24px;}
+  section{padding:72px 0;}
+  .fog{background:var(--color-fog);}
+  .eyebrow{
+    font-size:13px;font-weight:600;color:var(--color-steel);
+    text-transform:uppercase;letter-spacing:0.04em;margin-bottom:16px;
+  }
+  h2.title{
+    font-size:36px;font-weight:600;line-height:1.21;letter-spacing:-0.02em;
+    color:var(--color-ink);max-width:760px;
+  }
+  .lead{font-size:18px;color:var(--color-graphite);max-width:680px;margin-top:16px;line-height:1.55;}
+  .ember{color:var(--color-ember);}
+
+  /* ---------- Announcement bar ---------- */
+  .announce{
+    background:var(--color-carbon);color:#fff;text-align:center;
+    font-size:13px;font-weight:500;padding:8px 16px;
+  }
+  .announce a{color:var(--color-ember);font-weight:600;}
+  .announce a:hover{text-decoration:underline;}
+
+  /* ---------- Nav ---------- */
+  nav{
+    position:sticky;top:0;z-index:50;background:rgba(255,255,255,0.9);
+    backdrop-filter:saturate(160%) blur(8px);
+    border-bottom:1px solid var(--color-mist);
+  }
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:16px;}
+  .brand svg{flex:none;}
+  .nav-links{display:flex;gap:28px;align-items:center;}
+  .nav-links a{font-size:14px;font-weight:500;color:var(--color-ink);}
+  .nav-links a:hover{color:var(--color-ember);}
+  .nav-cta{display:flex;gap:12px;align-items:center;}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    border-radius:var(--radius-xl);font-weight:600;font-size:14px;
+    cursor:pointer;border:none;transition:.15s;
+  }
+  .btn-ember{background:var(--color-ember);color:#fff;padding:9px 18px;}
+  .btn-ember:hover{filter:brightness(1.06);}
+  .btn-ghost{background:transparent;color:var(--color-ink);padding:9px 14px;font-weight:500;}
+  .btn-ghost:hover{color:var(--color-ember);}
+  .btn-lg{padding:13px 24px;font-size:16px;}
+  @media(max-width:880px){.nav-links{display:none;}}
+
+  /* ---------- Hero ---------- */
+  .hero{padding:80px 0 72px;}
+  .hero-grid{display:grid;grid-template-columns:1.05fr 0.95fr;gap:48px;align-items:center;}
+  .hero h1{
+    font-size:56px;font-weight:600;line-height:1.05;letter-spacing:-0.03em;
+    color:var(--color-ink);
+  }
+  .hero .sub{font-size:18px;color:var(--color-graphite);margin-top:20px;max-width:520px;line-height:1.55;}
+  .hero-actions{display:flex;gap:14px;align-items:center;margin-top:32px;flex-wrap:wrap;}
+  .hero-form{
+    margin-top:28px;display:flex;gap:8px;max-width:480px;
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);
+    padding:6px 6px 6px 16px;background:#fff;
+  }
+  .hero-form input{
+    flex:1;border:none;outline:none;font-family:inherit;font-size:14px;color:var(--color-ink);background:transparent;
+  }
+  .hero-form input::placeholder{color:var(--color-steel);}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:24px;}
+  .chip{
+    font-size:12px;color:var(--color-pewter);border:1px solid var(--color-mist);
+    border-radius:var(--radius-md);padding:5px 10px;background:var(--color-fog);
+  }
+  @media(max-width:880px){
+    .hero-grid{grid-template-columns:1fr;}
+    .hero h1{font-size:40px;}
+    .hero-art{order:-1;}
+  }
+
+  /* ---------- Capability cards ---------- */
+  .cap-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px;}
+  .cap{
+    background:var(--color-paper);border:1px solid var(--color-mist);
+    border-radius:var(--radius-xl);padding:24px;
+  }
+  .cap .ic{width:28px;height:28px;color:var(--color-steel);margin-bottom:14px;}
+  .cap h3{font-size:16px;font-weight:600;color:var(--color-ink);margin-bottom:6px;}
+  .cap p{font-size:14px;color:var(--color-graphite);line-height:1.45;}
+  .cap code{font-size:12px;background:var(--color-fog);padding:2px 6px;border-radius:var(--radius-md);color:var(--color-pewter);}
+  @media(max-width:980px){.cap-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:560px){.cap-grid{grid-template-columns:1fr;}}
+
+  /* ---------- Logic / architecture ---------- */
+  .arch{
+    background:var(--color-fog);border-radius:var(--radius-xl);
+    padding:32px;margin-top:40px;
+  }
+  .arch svg{width:100%;height:auto;display:block;}
+  .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:48px;}
+  .step{
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);
+    padding:24px;background:var(--color-paper);position:relative;
+  }
+  .step .num{
+    width:32px;height:32px;border-radius:50%;border:1.5px solid var(--color-ember);
+    color:var(--color-ember);font-weight:600;font-size:14px;
+    display:flex;align-items:center;justify-content:center;margin-bottom:14px;
+  }
+  .step.active .num{background:var(--color-ember);color:#fff;}
+  .step h3{font-size:17px;font-weight:600;margin-bottom:6px;}
+  .step p{font-size:14px;color:var(--color-graphite);line-height:1.45;}
+  @media(max-width:880px){.timeline{grid-template-columns:repeat(2,1fr);}}
+
+  /* ---------- Problems table ---------- */
+  .ptable{
+    width:100%;border-collapse:separate;border-spacing:0;margin-top:40px;
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);overflow:hidden;
+  }
+  .ptable th,.ptable td{padding:18px 20px;text-align:left;font-size:15px;border-bottom:1px solid var(--color-mist);}
+  .ptable th{background:var(--color-paper);font-weight:600;color:var(--color-ink);font-size:14px;}
+  .ptable tr:last-child td{border-bottom:none;}
+  .ptable td.pain{color:var(--color-graphite);width:34%;font-weight:500;}
+  .ptable td.fix{color:var(--color-ink);}
+  .ptable td.fix b{color:var(--color-ember);font-weight:600;}
+
+  /* ---------- Scenario cards ---------- */
+  .sc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px;}
+  .sc{
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);padding:24px;background:var(--color-paper);
+  }
+  .sc .tag{font-size:12px;font-weight:600;color:var(--color-steel);text-transform:uppercase;letter-spacing:0.03em;}
+  .sc h3{font-size:17px;font-weight:600;margin:10px 0 8px;}
+  .sc p{font-size:14px;color:var(--color-graphite);line-height:1.5;}
+  @media(max-width:880px){.sc-grid{grid-template-columns:1fr;}}
+
+  /* ---------- Usage ---------- */
+  .usage-grid{display:grid;grid-template-columns:1fr 1fr;gap:32px;margin-top:40px;align-items:start;}
+  .steps{display:flex;flex-direction:column;gap:20px;}
+  .ustep{display:flex;gap:14px;}
+  .ustep .n{
+    flex:none;width:28px;height:28px;border-radius:50%;background:var(--color-ember);color:#fff;
+    font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center;
+  }
+  .ustep h4{font-size:15px;font-weight:600;margin-bottom:4px;}
+  .ustep p{font-size:14px;color:var(--color-graphite);line-height:1.5;}
+  .ustep p code{background:var(--color-fog);padding:2px 6px;border-radius:var(--radius-md);font-size:12.5px;color:var(--color-pewter);}
+  .code{
+    background:var(--color-carbon);color:#e8eaed;border-radius:var(--radius-xl);
+    padding:24px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13.5px;line-height:1.7;
+    overflow-x:auto;
+  }
+  .code .cm{color:#7d8590;}
+  .code .kw{color:var(--color-ember);}
+  .code .st{color:#a5d6ff;}
+  @media(max-width:880px){.usage-grid{grid-template-columns:1fr;}}
+
+  /* ---------- Security ---------- */
+  .sec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:40px;}
+  .sec{
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);padding:24px;background:var(--color-paper);
+  }
+  .sec .ic{width:26px;height:26px;color:var(--color-ember);margin-bottom:12px;}
+  .sec h3{font-size:16px;font-weight:600;margin-bottom:6px;}
+  .sec p{font-size:14px;color:var(--color-graphite);line-height:1.5;}
+  @media(max-width:880px){.sec-grid{grid-template-columns:1fr;}}
+
+  /* ---------- Decisions ---------- */
+  .dec-list{display:flex;flex-direction:column;gap:16px;margin-top:40px;}
+  .dec{
+    display:flex;gap:16px;align-items:flex-start;
+    border:1px solid var(--color-mist);border-radius:var(--radius-xl);padding:22px 24px;background:var(--color-paper);
+  }
+  .dec .dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--color-ember);margin-top:7px;}
+  .dec h4{font-size:16px;font-weight:600;margin-bottom:4px;}
+  .dec p{font-size:14px;color:var(--color-graphite);line-height:1.5;}
+
+  /* ---------- Footer ---------- */
+  footer{background:var(--color-abyss);color:#fff;padding:72px 0 48px;}
+  .foot-grid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:40px;}
+  .foot-brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;color:#fff;margin-bottom:16px;}
+  .foot-brand svg{flex:none;}
+  .foot-brand .ember{color:var(--color-ember);}
+  .foot-about{color:#b9bbc6;font-size:14px;line-height:1.6;max-width:300px;}
+  .foot-col h5{font-size:14px;font-weight:600;color:#fff;margin-bottom:14px;}
+  .foot-col a{display:block;color:#b9bbc6;font-size:14px;padding:5px 0;}
+  .foot-col a:hover{color:var(--color-ember);}
+  .foot-bottom{border-top:1px solid #1f242c;margin-top:48px;padding-top:24px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;color:#8b8d98;font-size:13px;}
+  @media(max-width:880px){.foot-grid{grid-template-columns:1fr 1fr;}}
+  @media(max-width:560px){.foot-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<!-- Announcement bar -->
+  <div class="announce">
+    龙虾脑 v1.0 已开源 · 单文件、零依赖、本地运行、<a href="#security">数据不出本机</a> → <a href="https://github.com/393535466-dev/-IOS-MAC---">查看仓库</a>
+  </div>
+
+<!-- Nav -->
+<nav>
+  <div class="wrap nav-inner">
+    <div class="brand">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="4.5" fill="#ff5900"/><path d="M11 2v3M11 17v3M2 11h3M17 11h3M4.5 4.5l2 2M15.5 15.5l2 2M17.5 4.5l-2 2M6.5 15.5l-2 2" stroke="#ff5900" stroke-width="1.6" stroke-linecap="round"/></svg>
+      龙虾脑
+    </div>
+    <div class="nav-links">
+      <a href="#logic">产品逻辑</a>
+      <a href="#capabilities">核心能力</a>
+      <a href="#scenarios">应用场景</a>
+      <a href="#usage">使用说明</a>
+      <a href="#security">安全性</a>
+      <a href="#decisions">设计决策</a>
+    </div>
+    <div class="nav-cta">
+      <a class="btn btn-ghost" href="https://github.com/393535466-dev/-IOS-MAC---">GitHub ↗</a>
+      <a class="btn btn-ember" href="#usage">快速开始</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="eyebrow">手机遥控 Mac · 自然语言执行入口</div>
+      <h1>让电脑长出一颗<br>听得懂人话的<span class="ember">大脑</span></h1>
+      <p class="sub">手机一句话（或一句语音）→ 智能解析 → 驱动 Mac 真实操作 → 手机实时回传状态与结果。不追求拟人思考，只追求指令清晰、执行可靠、过程可见。</p>
+      <div class="hero-actions">
+        <a class="btn btn-ember btn-lg" href="#usage">30 秒上手</a>
+        <a class="btn btn-ghost btn-lg" href="https://github.com/393535466-dev/-IOS-MAC---">在 GitHub 查看源码 ↗</a>
+      </div>
+      <div class="hero-form">
+        <input type="text" placeholder="把手机链接粘贴到这里（形如 http://192.168.x.x:8787?t=...）" aria-label="手机链接" />
+        <a class="btn btn-ember" href="#usage">打开控制台</a>
+      </div>
+      <div class="chips">
+        <span class="chip">打开微信</span>
+        <span class="chip">给文件传输助手发微信：今晚加班</span>
+        <span class="chip">百度一下 Python 异步</span>
+        <span class="chip">截个屏</span>
+      </div>
+    </div>
+
+    <!-- Hero art: phone → Mac -->
+    <div class="hero-art">
+      <svg viewBox="0 0 460 380" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="手机遥控 Mac 示意">
+        <!-- Mac -->
+        <rect x="200" y="60" width="230" height="150" rx="10" stroke="#b9bbc6" stroke-width="2"/>
+        <rect x="214" y="74" width="202" height="110" rx="4" fill="#f3f3f7"/>
+        <rect x="214" y="74" width="202" height="22" rx="4" fill="#e9eaf0"/>
+        <!-- WeChat window inside Mac -->
+        <rect x="232" y="104" width="100" height="68" rx="6" fill="#fff" stroke="#b9bbc6" stroke-width="1.5"/>
+        <circle cx="252" cy="124" r="9" fill="#ff5900"/>
+        <rect x="266" y="118" width="54" height="7" rx="3.5" fill="#c9ccd4"/>
+        <rect x="266" y="130" width="40" height="6" rx="3" fill="#d8dbe1"/>
+        <rect x="300" y="200" width="60" height="10" rx="5" fill="#15191e"/>
+        <!-- Phone -->
+        <rect x="40" y="120" width="96" height="190" rx="16" stroke="#b9bbc6" stroke-width="2" fill="#fff"/>
+        <rect x="50" y="138" width="76" height="120" rx="6" fill="#f3f3f7"/>
+        <!-- chat bubble -->
+        <rect x="60" y="150" width="56" height="26" rx="8" fill="#ff5900"/>
+        <text x="88" y="167" font-size="11" fill="#fff" text-anchor="middle" font-family="Inter,sans-serif" font-weight="600">打开微信</text>
+        <rect x="60" y="184" width="46" height="20" rx="8" fill="#fff" stroke="#b9bbc6" stroke-width="1.2"/>
+        <text x="83" y="198" font-size="9" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">…执行中</text>
+        <!-- connection line -->
+        <path d="M136 215 C 170 215, 175 180, 205 150" stroke="#ff5900" stroke-width="2" stroke-dasharray="5 5" stroke-linecap="round"/>
+        <circle cx="136" cy="215" r="4" fill="#ff5900"/>
+        <!-- ember spark -->
+        <circle cx="380" cy="40" r="5" fill="#ff5900"/>
+        <path d="M380 28v8M380 44v8M368 40h8M392 40h8M371 31l5 5M389 49l-5 -5M389 31l-5 5M371 49l5 -5" stroke="#ff5900" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- Capabilities -->
+<section class="fog" id="capabilities">
+  <div class="wrap">
+    <div class="eyebrow">核心能力</div>
+    <h2 class="title">一台 Mac，一句话，就能做这些</h2>
+    <p class="lead">规则引擎优先解析（明确指令秒级、零延迟），模糊指令回落可选大模型。以下能力均已实机验证。</p>
+    <div class="cap-grid">
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg>
+        <h3>打开任意应用 / 文件</h3>
+        <p>说名字即开：微信、WorkBuddy、剪映、访达… <code>打开谷歌浏览器</code></p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M17 14l3 3-3 3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>跨应用自动输入</h3>
+        <p>一句话在微信 / 豆包 / WorkBuddy 完成输入。<code>打开豆包——输入帮我写周报</code></p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M21 11.5a8.5 8.5 0 0 1-12 7.7L3 21l1.8-6A8.5 8.5 0 1 1 21 11.5z"/></svg>
+        <h3>一句话发微信 / 短信</h3>
+        <p>走路也能发：<code>给妈妈发微信：我到家了</code></p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2" stroke-linecap="round"/></svg>
+        <h3>系统控制</h3>
+        <p>截屏、音量、亮度、锁屏——口语即可。<code>截个屏</code></p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>
+        <h3>任意平台搜索</h3>
+        <p>百度 / 知乎 / B站 / 抖音… 不指定则默认百度。<code>百度一下 Python</code></p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>
+        <h3>触控板 + 滚轮</h3>
+        <p>手机屏幕移动并点击 Mac 光标，旁侧滚轮条上下滑动滚动页面。控制板固定置顶，软键盘弹出也不会被顶出屏幕。</p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke-linecap="round"/></svg>
+        <h3>语音输入</h3>
+        <p>按住说话，实时「正在听」反馈（HTTPS 下可用）。</p>
+      </div>
+      <div class="cap">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h4l3 8 4-16 3 8h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>状态回传 + 看板</h3>
+        <p>四阶段状态实时推回手机，<code>/dashboard</code> 可复盘。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Product Logic -->
+<section id="logic">
+  <div class="wrap">
+    <div class="eyebrow">产品逻辑 · 它是怎么工作的</div>
+    <h2 class="title">手机到 Mac，一条本地闭环</h2>
+    <p class="lead">所有解析与执行都发生在你的 Mac 本机：服务监听局域网，手机通过浏览器发指令，服务端把意图变成真实的系统调用，再把每一步状态回传。</p>
+
+    <!-- Architecture SVG -->
+    <div class="arch">
+      <svg viewBox="0 0 1120 240" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="架构：手机浏览器 → 本地服务 → macOS">
+        <!-- Phone node -->
+        <rect x="20" y="55" width="150" height="130" rx="14" fill="#fff" stroke="#b9bbc6" stroke-width="2"/>
+        <rect x="36" y="78" width="118" height="84" rx="6" fill="#f3f3f7"/>
+        <text x="95" y="118" font-size="13" font-weight="600" fill="#000" text-anchor="middle" font-family="Inter,sans-serif">手机浏览器</text>
+        <text x="95" y="138" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">自然语言 / 语音</text>
+        <text x="95" y="44" font-size="12" font-weight="600" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">① 输入意图</text>
+
+        <!-- arrow 1 -->
+        <path d="M170 120 H 268" stroke="#b9bbc6" stroke-width="2" stroke-dasharray="5 5"/>
+        <path d="M262 114 l8 6 -8 6" stroke="#b9bbc6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="219" y="108" font-size="11" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">HTTP/HTTPS</text>
+        <text x="219" y="146" font-size="11" fill="#ff5900" text-anchor="middle" font-family="Inter,sans-serif">+ 令牌鉴权</text>
+
+        <!-- Server node -->
+        <rect x="270" y="40" width="300" height="160" rx="14" fill="#fff" stroke="#000" stroke-width="2"/>
+        <text x="420" y="74" font-size="14" font-weight="600" fill="#000" text-anchor="middle" font-family="Inter,sans-serif">龙虾脑服务（app.js）</text>
+        <rect x="290" y="88" width="130" height="42" rx="8" fill="#f3f3f7" stroke="#b9bbc6" stroke-width="1.2"/>
+        <text x="355" y="114" font-size="12" font-weight="500" fill="#000" text-anchor="middle" font-family="Inter,sans-serif">解析 · 规划</text>
+        <rect x="430" y="88" width="120" height="42" rx="8" fill="#f3f3f7" stroke="#b9bbc6" stroke-width="1.2"/>
+        <text x="490" y="114" font-size="12" font-weight="500" fill="#000" text-anchor="middle" font-family="Inter,sans-serif">执行引擎</text>
+        <text x="420" y="170" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">规则优先 · 模糊回落大模型 · 数据不出本机</text>
+        <text x="420" y="28" font-size="12" font-weight="600" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">② 运行在你的 Mac 上</text>
+
+        <!-- arrow 2 -->
+        <path d="M570 120 H 668" stroke="#b9bbc6" stroke-width="2" stroke-dasharray="5 5"/>
+        <path d="M662 114 l8 6 -8 6" stroke="#b9bbc6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="619" y="108" font-size="11" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">open / osascript</text>
+        <text x="619" y="146" font-size="11" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">mousectl / screencapture</text>
+
+        <!-- Mac node -->
+        <rect x="670" y="40" width="300" height="160" rx="14" fill="#fff" stroke="#b9bbc6" stroke-width="2"/>
+        <text x="820" y="74" font-size="14" font-weight="600" fill="#000" text-anchor="middle" font-family="Inter,sans-serif">macOS 系统与应用</text>
+        <rect x="700" y="92" width="80" height="44" rx="6" fill="#f3f3f7" stroke="#b9bbc6"/>
+        <text x="740" y="119" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">App</text>
+        <rect x="796" y="92" width="80" height="44" rx="6" fill="#f3f3f7" stroke="#b9bbc6"/>
+        <text x="836" y="119" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">系统</text>
+        <rect x="892" y="92" width="60" height="44" rx="6" fill="#f3f3f7" stroke="#b9bbc6"/>
+        <text x="922" y="119" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">光标</text>
+        <text x="820" y="170" font-size="11" fill="#60646c" text-anchor="middle" font-family="Inter,sans-serif">真实驱动：打开 / 输入 / 点击 / 截屏</text>
+        <text x="820" y="28" font-size="12" font-weight="600" fill="#8b8d98" text-anchor="middle" font-family="Inter,sans-serif">③ 执行</text>
+
+        <!-- return arrow -->
+        <path d="M820 200 C 820 224, 420 224, 420 202" stroke="#ff5900" stroke-width="2" stroke-dasharray="5 5" fill="none"/>
+        <text x="620" y="232" font-size="11" fill="#ff5900" text-anchor="middle" font-family="Inter,sans-serif">④ 状态 / 结果实时回传手机</text>
+      </svg>
+    </div>
+
+    <!-- Timeline -->
+    <div class="timeline">
+      <div class="step active">
+        <div class="num">1</div>
+        <h3>解析</h3>
+        <p>规则引擎优先，明确指令（打开 / 搜索 / 截屏）秒级命中；模糊指令回落大模型。中文名自动映射到真实应用名。</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>规划</h3>
+        <p>把意图拆成可执行步骤；复合指令（"打开微信——输入你好"）逐段规划，明确每一步要做什么。</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>执行</h3>
+        <p>通过 open / osascript / screencapture / mousectl 真实驱动 Mac：打开应用、自动输入、点击、截屏、移动光标。</p>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <h3>回传</h3>
+        <p>每个阶段的状态、最终结果与失败原因都推回手机；宁可明确失败，也绝不静默吞错。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Problems / Product needs -->
+<section class="fog" id="problems">
+  <div class="wrap">
+    <div class="eyebrow">产品需求 · 解决什么问题</div>
+    <h2 class="title">它要替你扛住的五个麻烦</h2>
+    <p class="lead">龙虾脑不是又一个远程桌面，而是把「用电脑」这件事，从层层菜单点击，坍缩成一句话。</p>
+    <table class="ptable">
+      <thead><tr><th>痛点</th><th>龙虾脑的应对</th></tr></thead>
+      <tbody>
+        <tr><td class="pain">人不在电脑前，却需要它干活</td><td class="fix"><b>手机即遥控器</b>：同 Wi-Fi 即可远程触发 Mac 去搜片、下载、打开工程。</td></tr>
+        <tr><td class="pain">操作门槛高</td><td class="fix">非技术用户 / 长辈不会用复杂软件与快捷键——<b>一句话</b>完成「打开应用并输入」等多步操作。</td></tr>
+        <tr><td class="pain">传统自动化是黑盒</td><td class="fix">宏 / 脚本失败无提示、不透明——<b>四阶段时间轴 + 看板</b>，每步状态可感知。</td></tr>
+        <tr><td class="pain">远程控制方案重</td><td class="fix">需装客户端、注册账号、担心数据出公网——<b>零依赖单文件、本地运行、令牌鉴权</b>，数据不出本机。</td></tr>
+        <tr><td class="pain">缺语音 / 触控</td><td class="fix">手机只能打字发指令，手忙时仍不便——支持 <b>语音输入 + 手机触控板</b> 直接操控 Mac 光标。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Scenarios -->
+<section id="scenarios">
+  <div class="wrap">
+    <div class="eyebrow">应用场景</div>
+    <h2 class="title">什么时候它会很好用</h2>
+    <div class="sc-grid">
+      <div class="sc"><div class="tag">远程触发</div><h3>人不在电脑前</h3><p>躺在沙发上、在厨房，用手机让 Mac 去 B 站搜片、下载资料、打开某个工程。</p></div>
+      <div class="sc"><div class="tag">解放双手</div><h3>手上有活</h3><p>做饭、健身时，用语音让电脑「打开豆包——记一下待办」，无需腾出手。</p></div>
+      <div class="sc"><div class="tag">跨应用输入</div><h3>不必切到电脑前</h3><p>一句话在微信、豆包、WorkBuddy 等任意应用里完成输入与提交。</p></div>
+      <div class="sc"><div class="tag">手机当触控板</div><h3>临时没有鼠标</h3><p>用手机屏幕直接移动并点击 Mac 光标，应急操控不掉线。</p></div>
+      <div class="sc"><div class="tag">一键联络</div><h3>走路也能发</h3><p>用语音「给妈妈发微信：我到家了」，消息即时送达，不用掏出电脑。</p></div>
+      <div class="sc"><div class="tag">团队 / 演示</div><h3>沉淀与复盘</h3><p>运营看板沉淀任务数据，便于复盘「有哪些指令、成功率如何」。</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- Usage -->
+<section class="fog" id="usage">
+  <div class="wrap">
+    <div class="eyebrow">使用说明</div>
+    <h2 class="title">三步，把你的 Mac 交给一句话</h2>
+    <div class="usage-grid">
+      <div class="steps">
+        <div class="ustep"><div class="n">1</div><div><h4>启动服务</h4><p>终端运行 <code>node app.js</code>，或直接双击 <code>start.command</code>（用「终端」启动，确保辅助功能授权对象明确）。启动后终端会打印手机端地址。</p></div></div>
+        <div class="ustep"><div class="n">2</div><div><h4>手机连接</h4><p>手机与 Mac 同 Wi-Fi，浏览器打开打印的局域网地址。首次请在 Mac 本机 <code>http://localhost:8787/config</code> 复制带令牌的「手机链接」加到主屏幕；语音需走 <code>https://...:8788</code> 并信任证书。</p></div></div>
+        <div class="ustep"><div class="n">3</div><div><h4>授权辅助功能</h4><p>自动输入 / 点击依赖 macOS「辅助功能」权限。在 <code>系统设置 → 隐私与安全性 → 辅助功能</code> 开启运行 node 的程序，并完全退出重开。未授权时手机端会显示醒目引导，而非静默失败。</p></div></div>
+        <div class="ustep"><div class="n">4</div><div><h4>发指令 / 看数据</h4><p>手机输入框打字，或按住说话用语音说一句话；状态实时回传。看板 <code>/dashboard</code> 含成功率、耗时与明细，每 5 秒刷新。</p></div></div>
+      </div>
+      <div>
+        <div class="code">
+<span class="cm"># 启动（需 Node 18+）</span><br>
+<span class="kw">node</span> app.js<br>
+<br>
+<span class="cm"># 或用大模型兜底模糊指令（可选）</span><br>
+<span class="kw">export</span> LLM_BASE_URL=https://api.example.com/v1<br>
+<span class="kw">export</span> LLM_API_KEY=sk-xxxx<br>
+<span class="kw">export</span> LLM_MODEL=gpt-4o-mini<br>
+<span class="kw">node</span> app.js<br>
+<br>
+<span class="cm"># 自定义令牌 / 密码</span><br>
+<span class="st">POST</span> /api/auth/reset  { "token": "你的固定密码" }<br>
+<br>
+<span class="cm"># 看板</span><br>
+<span class="st">open</span> http://localhost:8787/dashboard
+        </div>
+        <p class="lead" style="font-size:14px;margin-top:16px;">令牌说明：首次启动随机生成并写入 <code style="background:#e9eaf0;padding:2px 6px;border-radius:6px;">auth.json</code>（已 gitignore）。局域网访问须带令牌（<code style="background:#e9eaf0;padding:2px 6px;border-radius:6px;">?t=TOKEN</code>），本机 localhost 免验证。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Security -->
+<section id="security">
+  <div class="wrap">
+    <div class="eyebrow">安全性</div>
+    <h2 class="title">数据不出本机，权限清晰可控</h2>
+    <p class="lead">控制权留在你的 Mac 上，云平台拿不到你的电脑，因此坚持本地运行 + 令牌鉴权。</p>
+    <div class="sec-grid">
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke-linecap="round"/></svg>
+        <h3>局域网令牌鉴权</h3>
+        <p>任意 /api/ 访问须携令牌；本机视为本人设备免验证。令牌经 URL 或请求头透传，手机页自动带。</p>
+      </div>
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/><path d="M12 3v18M3 12h18" stroke-linecap="round"/><path d="M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18" opacity="0.4"/></svg>
+        <h3>不部署到公网</h3>
+        <p>不部署 Vercel / 无服务器平台：控制依赖服务跑在你的 Mac 上，上云只剩空壳。远程访问走「Mac 常驻 + 加密隧道 + 令牌」。</p>
+      </div>
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>辅助功能授权可控</h3>
+        <p>自动输入 / 点击依赖系统辅助功能开关，用户显式授权且明确知道授权对象；未授权即降级为「复制 + 手动粘贴」。</p>
+      </div>
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l8 4v5c0 5-4 8-8 9-4-1-8-4-8-9V7z"/><path d="M12 8v4M12 15h.01" stroke-linecap="round"/></svg>
+        <h3>高危操作边界</h3>
+        <p>删除文件等不可逆动作默认禁用；已支持的「发消息」严格走「显式指令 + 操作日志」，产品化后以白名单 + 二次确认为底线。</p>
+      </div>
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3 3 7 3s7-1.3 7-3v-6" stroke-linecap="round"/></svg>
+        <h3>数据本地化</h3>
+        <p>任务存于本地 tasks.json；auth.json / llm-config.json（含 Key）均 gitignore，不会进入公开仓库。</p>
+      </div>
+      <div class="sec">
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <h3>零依赖最小化攻击面</h3>
+        <p>仅用 Node 内置模块，无需 npm install；不拉外部运行时，部署简单、可被审计。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Decisions (PM view) -->
+<section class="fog" id="decisions">
+  <div class="wrap">
+    <div class="eyebrow">设计决策 · PM 视角</div>
+    <h2 class="title">为什么是这些取舍</h2>
+    <div class="dec-list">
+      <div class="dec"><div class="dot"></div><div><h4>规则引擎优先 + 大模型兜底</h4><p>明确指令走本地规则，秒级、零成本、零延迟；仅模糊 / 开放指令回落模型。结果：大多数时候「感觉不到 AI，但指令依然灵」。</p></div></div>
+      <div class="dec"><div class="dot"></div><div><h4>本地优先，不部署公网</h4><p>控制能力依赖服务跑在你的 Mac 上，云平台拿不到你的电脑。坚持本地运行 + 令牌鉴权，远程走「Mac 常驻 + 加密隧道 + 令牌」。</p></div></div>
+      <div class="dec"><div class="dot"></div><div><h4>过程透明与显式失败</h4><p>任何阶段失败都中止并推送原因 + 重试引导，不静默吞错；四阶段时间轴让每一步可被感知。</p></div></div>
+      <div class="dec"><div class="dot"></div><div><h4>多模态输入并存</h4><p>文字、语音、触控板三种入口并存，覆盖「手忙 / 不想打字 / 精细操控」不同情境。</p></div></div>
+      <div class="dec"><div class="dot"></div><div><h4>安全边界前置</h4><p>自动输入 / 点击依赖用户显式开启的辅助功能授权；删除文件等高危不可逆动作默认禁用，发消息走显式指令 + 操作日志。</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <div class="foot-brand">
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="4.5" fill="#ff5900"/><path d="M11 2v3M11 17v3M2 11h3M17 11h3M4.5 4.5l2 2M15.5 15.5l2 2M17.5 4.5l-2 2M6.5 15.5l-2 2" stroke="#ff5900" stroke-width="1.6" stroke-linecap="round"/></svg>
+          龙虾<span class="ember">脑</span>
+        </div>
+        <p class="foot-about">手机一句话遥控 Mac 的 AI 执行入口。听得懂人话、按套路办事的简单大脑——指令清晰、执行可靠、过程可见。</p>
+      </div>
+      <div class="foot-col">
+        <h5>产品</h5>
+        <a href="#logic">产品逻辑</a>
+        <a href="#capabilities">核心能力</a>
+        <a href="#scenarios">应用场景</a>
+        <a href="#decisions">设计决策</a>
+      </div>
+      <div class="foot-col">
+        <h5>上手</h5>
+        <a href="#usage">使用说明</a>
+        <a href="#security">安全性</a>
+        <a href="https://github.com/393535466-dev/-IOS-MAC---">GitHub 仓库 ↗</a>
+        <a href="https://github.com/393535466-dev/-IOS-MAC---/blob/main/README.md">README ↗</a>
+      </div>
+      <div class="foot-col">
+        <h5>资源</h5>
+        <a href="https://github.com/393535466-dev/-IOS-MAC---/blob/main/软件与语言清单.md">软件与语言清单 ↗</a>
+        <a href="https://github.com/393535466-dev/-IOS-MAC---/blob/main/龙虾脑产品方案.html">产品方案 ↗</a>
+        <a href="https://github.com/393535466-dev/-IOS-MAC---/blob/main/LICENSE">License (MIT) ↗</a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>© 2026 龙虾脑 LobsterBrain · 本地优先的手机遥控 Mac 方案</span>
+      <span>Built with a single ember on white concrete · MIT License</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

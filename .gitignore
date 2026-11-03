@@ -8,6 +8,10 @@ tasks.json
 node_modules/
 npm-debug.log*
 
+# Python 缓存（py_compile 产物）
+__pycache__/
+*.pyc
+
 # 截图产物
 龙虾脑截图_*.png
 
