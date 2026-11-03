@@ -47,20 +47,64 @@ const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封�
 
 /* ---------------- 字典：应用 / 文件夹 / 站点 ---------------- */
 const APPS = {
+  // 通讯
   '微信': 'WeChat', 'wechat': 'WeChat', 'qq': 'QQ', 'QQ': 'QQ',
+  '企业微信': 'WeCom', '信息': 'Messages', '短信': 'Messages', 'iMessage': 'Messages',
+  '钉钉': 'DingTalk', '飞书': 'Feishu', 'slack': 'Slack', 'telegram': 'Telegram', '电报': 'Telegram',
+  'skype': 'Skype', 'discord': 'Discord', 'whatsapp': 'WhatsApp', 'line': 'LINE',
+  // 浏览器
   'safari': 'Safari', '浏览器': 'Safari', 'chrome': 'Google Chrome', '谷歌浏览器': 'Google Chrome', 'google浏览器': 'Google Chrome', 'chrome浏览器': 'Google Chrome', '谷歌': 'Google Chrome',
-  '邮件': 'Mail', '备忘录': 'Notes', '计算器': 'Calculator',
+  'firefox': 'Firefox', '火狐': 'Firefox', 'edge': 'Microsoft Edge', '微软edge': 'Microsoft Edge', '微软浏览器': 'Microsoft Edge',
+  'arc': 'Arc', 'brave': 'Brave', 'opera': 'Opera',
+  // 系统应用
+  '邮件': 'Mail', '备忘录': 'Notes', '提醒事项': 'Reminders', '日历': 'Calendar', '地图': 'Maps',
+  '计算器': 'Calculator', '预览': 'Preview', '文本编辑': 'TextEdit', '截图': 'Screenshot',
   '访达': 'Finder', 'finder': 'Finder', '终端': 'Terminal', 'terminal': 'Terminal',
+  '照片': 'Photos', '图库': 'Photos', '音乐': 'Music', '播客': 'Podcasts', '图书': 'Books',
+  '通讯录': 'Contacts', '联系人': 'Contacts', '语音备忘录': 'Voice Memos', '录音': 'Voice Memos',
+  '便签': 'Stickies', '字体册': 'Font Book', '活动监视器': 'Activity Monitor',
+  '磁盘工具': 'Disk Utility', '控制台': 'Console', '钥匙串': 'Keychain Access', '钥匙串访问': 'Keychain Access',
+  '时间机器': 'Time Machine', 'facetime': 'FaceTime', 'faceTime': 'FaceTime', 'face time': 'FaceTime',
+  // 办公 / 笔记
+  'wps': 'WPS Office', 'word': 'Microsoft Word', 'excel': 'Microsoft Excel',
+  'ppt': 'Microsoft PowerPoint', 'powerpoint': 'Microsoft PowerPoint', 'outlook': 'Microsoft Outlook',
+  'onenote': 'OneNote', 'teams': 'Microsoft Teams', 'notion': 'Notion', 'obsidian': 'Obsidian', 'obsidian笔记': 'Obsidian',
+  '印象笔记': 'Evernote', 'evernote': 'Evernote', '有道云笔记': 'YoudaoNote', '有道笔记': 'YoudaoNote',
+  'typora': 'Typora', '熊掌记': 'Bear', 'bear': 'Bear', '为知笔记': 'WizNote',
+  // 会议 / 协作
+  '腾讯会议': 'TencentMeeting', 'zoom': 'Zoom', '腾讯会议国际版': 'VooV Meeting',
+  // 开发
   'vscode': 'Visual Studio Code', '代码编辑器': 'Visual Studio Code', 'vs code': 'Visual Studio Code',
-  '网易云音乐': 'NeteaseMusic', 'spotify': 'Spotify', '飞书': 'Feishu', '钉钉': 'DingTalk',
+  'xcode': 'Xcode', 'android studio': 'Android Studio', 'idea': 'IntelliJ IDEA', 'pycharm': 'PyCharm',
+  'webstorm': 'WebStorm', 'cursor': 'Cursor', 'iterm': 'iTerm', 'iTerm2': 'iTerm',
+  'docker': 'Docker Desktop', 'postman': 'Postman', 'github desktop': 'GitHub Desktop', 'sourcetree': 'SourceTree',
+  // 设计 / 剪辑
+  'figma': 'Figma', 'sketch': 'Sketch', 'axure': 'Axure RP', '蓝湖': 'Lanhu', '墨刀': 'Modao', 'mastergo': 'MasterGo',
+  '剪映': 'JianyingPro', 'capcut': 'CapCut', '达芬奇': 'DaVinci Resolve',
+  'photoshop': 'Adobe Photoshop', 'illustrator': 'Adobe Illustrator',
+  'premiere': 'Adobe Premiere Pro', 'after effects': 'Adobe After Effects', 'audition': 'Adobe Audition', 'xd': 'Adobe XD',
+  // 影音 / 视频
+  '网易云音乐': 'NeteaseMusic', 'spotify': 'Spotify', 'qq音乐': 'QQMusic', '喜马拉雅': 'Ximalaya',
+  '抖音': 'Douyin', '快手': 'Kuaishou', '哔哩哔哩': 'bilibili', 'b站客户端': 'bilibili',
+  '爱奇艺客户端': 'iQiYi', '优酷客户端': 'Youku', '腾讯视频客户端': 'TencentVideo',
+  'iina': 'IINA', 'vlc': 'VLC',
+  // 网盘 / 下载
+  '百度网盘': 'BaiduNetdisk', '阿里云盘': 'AliyunDrive', '迅雷': 'Thunder', '迅雷下载': 'Thunder',
+  'qbittorrent': 'qBittorrent', 'transmission': 'Transmission',
+  // 词典 / 翻译 / 输入法
+  '有道词典': 'Youdao', '欧路词典': 'Eudic', '欧路': 'Eudic', '金山词霸': 'PowerWord',
+  '系统翻译': 'Translate', '翻译': 'Translate', '微信输入法': 'WeType', '搜狗输入法': 'Sogou', '百度输入法': 'BaiduInput',
+  // 效率 / 清单
+  '滴答清单': 'TickTick', 'ticktick': 'TickTick', 'things': 'Things', 'omnifocus': 'OmniFocus',
+  // AI 助手
   '豆包': 'DoubaoWork', 'doubao': 'DoubaoWork', 'workbuddy': 'WorkBuddy', 'WorkBuddy': 'WorkBuddy',
-  '企业微信': 'WeCom', '日历': 'Calendar', '提醒事项': 'Reminders', '地图': 'Maps',
-  '预览': 'Preview', '文本编辑': 'TextEdit', '截图': 'Screenshot', 'quicktime': 'QuickTime Player',
+  'kimi': 'Kimi', '元宝': 'Yuanbao', '通义千问': 'Tongyi', '文心一言': 'Wenxin', '智谱': 'ChatGLM', 'chatgpt': 'ChatGPT',
 };
 const FOLDERS = {
   '下载': '~/Downloads', '桌面': '~/Desktop', '文档': '~/Documents',
   '主目录': '~', '家目录': '~', '应用程序': '/Applications',
   '图片': '~/Pictures', '影片': '~/Movies', '音乐': '~/Music',
+  '回收站': '~/.Trash', '废纸篓文件夹': '~/.Trash', '用户目录': '~',
 };
 const SITES = {
   baidu: { label: '百度', home: 'https://www.baidu.com', search: k => 'https://www.baidu.com/s?wd=' + encodeURIComponent(k), keys: ['百度', 'baidu'] },
@@ -217,14 +261,14 @@ function detectFolder(text) {
   return null;
 }
 function detectSystem(text) {
-  if (/静音/.test(text)) return { sub: 'mute' };
-  if (/音量.*调大|调大.*音量|音量.*大|声音.*大|调大声音|大声/.test(text)) return { sub: 'volume_up' };
-  if (/音量.*调小|调小.*音量|音量.*小|声音.*小|调小声音|小声/.test(text)) return { sub: 'volume_down' };
-  if (/亮度/.test(text)) return { sub: 'brightness' };
-  if (/截图|截屏|截个屏|screen ?shot/i.test(text)) return { sub: 'screenshot' };
-  if (/锁屏|锁定屏幕/.test(text)) return { sub: 'lock' };
-  if (/清空废纸篓|清废纸篓|empty.*trash/.test(text)) return { sub: 'trash' };
-  if (/系统设置|打开设置|系统偏好/.test(text)) return { sub: 'settings' };
+  if (/静音|mute|静音模式/.test(text)) return { sub: 'mute' };
+  if (/音量.*调大|调大.*音量|音量.*大|声音.*大|调大声音|大声|声音大一点|音量加大|音量升高|调高音量|把声音调大|音量拉高|音量调到最大|音量最大|最大音量/.test(text)) return { sub: 'volume_up' };
+  if (/音量.*调小|调小.*音量|音量.*小|声音.*小|调小声音|小声|声音小一点|音量减小|音量降低|调低音量|把声音调小|音量拉低|音量调到最小|音量最小|最小音量/.test(text)) return { sub: 'volume_down' };
+  if (/亮度|调亮|调暗|屏幕亮度|亮度调高|亮度调低|把亮度/.test(text)) return { sub: 'brightness' };
+  if (/截图|截屏|截个屏|screen ?shot|拍个照|截一张|抓屏|截图一下|截屏一下/i.test(text)) return { sub: 'screenshot' };
+  if (/锁屏|锁定屏幕|锁电脑|锁住屏幕|锁定/.test(text)) return { sub: 'lock' };
+  if (/清空废纸篓|清废纸篓|清空垃圾|清垃圾|empty.*trash/.test(text)) return { sub: 'trash' };
+  if (/系统设置|打开设置|系统偏好|偏好设置|设置/.test(text)) return { sub: 'settings' };
   return null;
 }
 function extractQuoted(text) {
@@ -234,7 +278,7 @@ function extractQuoted(text) {
   if (m) return m[1];
   return null;
 }
-const STOP_PHRASES = ['帮我','请','一下','搜索','搜','查找','找','查','播放','看','放','观看','听一下','听歌','并','的','百度','google','谷歌','b站','哔哩','bilibili','优酷','爱奇艺','腾讯视频','腾讯','youtube','油管','豆瓣','知乎','微博','github','淘宝','京东','相关','视频','电影','一部','最近','热门','随便','来一部','啥','什么','打开','启动','唤起','进','首页','网站','官网','记到备忘录','记到','备忘录','便签','记一下','提醒我','音量','声音','调大','调小','静音','亮度','截图','截屏','截个屏','锁屏','清空废纸篓','废纸篓','系统设置','设置','预告片','预告','正片','完整版','全片','花絮','幕后','彩蛋','解说','影评','trailer','teaser','用','在','上','去','个','下'];
+const STOP_PHRASES = ['帮我','请','一下','搜索','搜','查找','找','查','播放','看','放','观看','听一下','听歌','并','的','百度','google','谷歌','b站','哔哩','bilibili','优酷','爱奇艺','腾讯视频','腾讯','youtube','油管','豆瓣','知乎','微博','github','淘宝','京东','相关','视频','电影','一部','最近','热门','随便','来一部','啥','什么','打开','启动','唤起','进','首页','网站','官网','记到备忘录','记到','备忘录','便签','记一下','提醒我','音量','声音','调大','调小','静音','亮度','截图','截屏','截个屏','锁屏','清空废纸篓','废纸篓','系统设置','设置','预告片','预告','正片','完整版','全片','花絮','幕后','彩蛋','解说','影评','trailer','teaser','用','在','上','去','个','下','我想要','我想','我要','麻烦你','麻烦','可以吗','能不能','能否','顺便','想要','希望','需要','请问','帮忙','帮忙把','去查','来看','看看','瞧瞧','整一个','来一个','搞一个','弄一个','帮我把','请帮','一个','一些','那个','这个','它','内容','东西','关于','话题','如何','怎么','怎样','使','到','让','给'];
 function extractKeyword(text) {
   let t = extractQuoted(text);
   if (t) return t;
@@ -251,7 +295,7 @@ function localParse(text) {
 
   // 0. 复合指令：打开XX——输入YY / 打开XX然后输入YY / 打开XX，输入YY
   {
-    const parts = raw.split(/——|—|--|然后|之后|接着|，再|,再/).map(s => s.trim()).filter(Boolean);
+    const parts = raw.split(/——|—|--|然后|之后|接着|并且|以及|，再|，然后|,再|顺便|顺手/).map(s => s.trim()).filter(Boolean);
     if (parts.length >= 2) {
       const openPart = parts.find(p => /打开|启动|唤起/.test(p));
       const inputPart = parts.find(p => /^(输入|写|发送|打)/.test(p) && p !== openPart);
@@ -270,16 +314,21 @@ function localParse(text) {
     }
   }
 
-  // 0.5 发消息给指定联系人：发微信给X：Y / 给X发微信：Y / 发消息给X：Y
+  // 0.5 发消息给指定联系人：发微信给X：Y / 给X发微信：Y / 用微信给X发：Y / 通知X：Y / 告诉X：Y
   {
     const isSMS = /短信|iMessage|信息/.test(raw);
     const appKey = isSMS ? 'Messages' : 'WeChat';
     const appName = isSMS ? '信息' : '微信';
     let contact = null, msg = null;
-    const m1 = raw.match(/发(?:微信|消息|短信|信息)给(.+?)[：:：](.+)/);
-    const m2 = raw.match(/给(.+?)发(?:微信|消息|信息)[:：](.+)/);
+    const VERB = '(?:微信|消息|短信|信息|通知|告诉)';
+    const m1 = raw.match(new RegExp('发' + VERB + '?给(.+?)[：:：](.+)'));
+    const m2 = raw.match(new RegExp('给(.+?)发' + VERB + '[:：](.+)'));
+    const m3 = raw.match(/用微信给(.+?)发[:：](.+)/);
+    const m4 = raw.match(new RegExp('(?:通知|告诉)(.+?)[：:：](.+)'));
     if (m1) { contact = m1[1].trim(); msg = m1[2].trim(); }
     else if (m2) { contact = m2[1].trim(); msg = m2[2].trim(); }
+    else if (m3) { contact = m3[1].trim(); msg = m3[2].trim(); }
+    else if (m4) { contact = m4[1].trim(); msg = m4[2].trim(); }
     if (contact && msg) {
       return { action: 'send_msg', target: msg, app: appKey, appName, contact, raw, source: 'rule' };
     }
@@ -325,8 +374,8 @@ function localParse(text) {
     return { action: 'note', target: body, platform: null, contentType: null, raw, source: 'rule' };
   }
 
-  // 3. 打开类
-  if (/打开|启动|唤起|进.*首页|打开.*网站/.test(raw)) {
+  // 3. 打开类（含「搜索 / 查」等自然语言说法；若同时含「播放/看/评分」则交给对应分支）
+  if (/打开|启动|唤起|进.*首页|打开.*网站|搜索|搜一下|搜搜|检索|查询|查找/.test(raw) && !/播放|看|放|观看|听歌|听一下|评分|打分|评价|几分|豆瓣/.test(raw)) {
     const app = detectApp(raw);
     if (app) return { action: 'open', sub: 'open_app', target: app.name, app: app.key, platform: null, contentType: null, raw, source: 'rule' };
     const folder = detectFolder(raw);
@@ -337,6 +386,11 @@ function localParse(text) {
     }
     const p = detectSite(raw);
     if (p) return { action: 'open', sub: 'open_site', target: SITES[p].label, platform: p, contentType: null, raw, source: 'rule' };
+    // 含「搜索 / 查」但没识别到具体平台 → 默认用百度搜索
+    if (/搜索|搜一下|搜搜|检索|查询|查找/.test(raw)) {
+      const kw = extractKeyword(raw);
+      if (kw) return { action: 'search', target: kw, platform: 'baidu', contentType: null, raw, source: 'rule' };
+    }
     // 兜底：尝试当应用名（低置信，交给 LLM 更准）
     const kw = extractKeyword(raw);
     if (kw) return { action: 'open', sub: 'open_app', target: kw, app: kw, platform: null, contentType: null, raw, source: 'rule', lowConfidence: true };
