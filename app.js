@@ -482,170 +482,219 @@ textarea:focus{border-color:#D85A30}
 
 /* ---------------- 手机任务页 ---------------- */
 const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>龙虾脑 · 一句话指挥你的 Mac</title><style>${CSS}</style></head><body><div class="wrap">
-<div class="logo"><div class="dot">龙</div><h1>龙虾脑 LobsterBrain</h1></div>
-<div class="slogan">说句话或打字，让 Mac 替你干活 · 支持语音输入</div>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>龙虾脑 · 一句话指挥你的 Mac</title><style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:#fff;color:#1A1A1A;line-height:1.6;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+/* 顶部品牌栏 */
+.header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px;background:#fff;border-bottom:1px solid #F0EFEC;flex-shrink:0}
+.brand{display:flex;align-items:center;gap:8px}
+.brand .dot{width:28px;height:28px;border-radius:8px;background:#D85A30;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:14px}
+.brand .name{font-size:15px;font-weight:600;color:#1A1A1A}
+.brand .sub{font-size:10px;color:#B0AFAA;margin-left:2px}
+.dash-link{font-size:12px;color:#D85A30;text-decoration:none;padding:4px 10px;border:1px solid #F0CFC0;border-radius:14px}
+/* 主内容区（可滚动） */
+.main{flex:1;overflow-y:auto;padding:0 18px;display:flex;flex-direction:column}
+/* 语音按钮区 */
+.voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 0 20px}
+.mic-btn{width:88px;height:88px;border-radius:50%;border:none;background:linear-gradient(135deg,#D85A30,#E87340);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 20px rgba(216,90,48,.3);transition:transform .15s,box-shadow .15s;position:relative}
+.mic-btn svg{width:34px;height:34px;fill:#fff}
+.mic-btn.recording{background:linear-gradient(135deg,#A32D2D,#D85A30);transform:scale(1.08);box-shadow:0 6px 30px rgba(163,45,45,.4)}
+.mic-btn.recording::before{content:'';position:absolute;inset:-12px;border-radius:50%;border:2px solid rgba(216,90,48,.3);animation:ripple 1.2s infinite}
+.mic-btn.disabled{background:#E5E2DA;box-shadow:none;cursor:default;opacity:.6}
+@keyframes ripple{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.5);opacity:0}}
+.mic-label{margin-top:14px;font-size:13px;color:#888780;text-align:center;min-height:20px}
+.mic-label.recording{color:#D85A30;font-weight:500}
+.mic-hint{margin-top:4px;font-size:11px;color:#B0AFAA;text-align:center;max-width:260px}
+.mic-hint a{color:#D85A30;text-decoration:underline;cursor:pointer}
+/* 任务状态区 */
+.status-area{margin-top:8px}
+.task-card{background:#FAFAF8;border-radius:14px;padding:14px 16px;margin-bottom:10px}
+.task-card .echo{font-size:14px;font-weight:500;color:#1A1A1A;margin-bottom:8px}
+.understand{background:#F0EDE6;border-radius:10px;padding:10px 12px;font-size:12px;color:#5C5A52;margin:8px 0}
+.understand b{font-weight:600;color:#3C3A32}
+.stage-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0}
+.stage-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:2px;background:#E5E2DA;transition:background .3s}
+.stage-dot.done{background:#0F6E56}.stage-dot.running{background:#D85A30;animation:pulse 1s infinite}.stage-dot.failed{background:#A32D2D}
+@keyframes pulse{50%{opacity:.4}}
+.stage-body{flex:1}
+.stage-name{font-size:13px;font-weight:500;color:#1A1A1A}
+.stage-note{font-size:11px;color:#888780;word-break:break-all;margin-top:1px}
+.result-box{border-radius:14px;padding:14px 16px;font-size:14px;margin-top:8px}
+.result-box.ok{background:#F0F9F4;color:#04342C;border:1px solid #B8E0CC}
+.result-box.err{background:#FEF0F0;color:#501313;border:1px solid #F0C4C4}
+.result-meta{font-size:11px;color:#888780;margin-top:6px}
+.task-time{font-size:11px;color:#B0AFAA;margin-top:6px}
+/* 底部栏 */
+.bottom-bar{flex-shrink:0;background:#fff;border-top:1px solid #F0EFEC;padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+.chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex-shrink:0;padding:6px 14px;border:1px solid #E8E5DF;border-radius:16px;background:#fff;color:#5C5A52;font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s}
+.chip:active{background:#D85A30;color:#fff;border-color:#D85A30}
+.input-bar{display:flex;gap:8px;align-items:center}
+.input-bar input{flex:1;border:1px solid #E8E5DF;border-radius:22px;padding:11px 16px;font-size:15px;font-family:inherit;outline:none;background:#FAFAF8;transition:border-color .15s}
+.input-bar input:focus{border-color:#D85A30;background:#fff}
+.send-btn{width:44px;height:44px;border-radius:50%;border:none;background:#D85A30;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.send-btn:active{background:#B8482A}
+.send-btn svg{width:20px;height:20px;fill:#fff}
+</style></head><body>
+<div class="header">
+  <div class="brand"><span class="dot">龙</span><span class="name">龙虾脑</span><span class="sub">LobsterBrain</span></div>
+  <a href="/dashboard" class="dash-link" target="_blank">看板</a>
+</div>
 
-<div class="card">
-  <div class="input-row">
-    <textarea id="input" placeholder="试试：搜索《流浪地球》预告片并播放 / 打开微信 / 截个屏"></textarea>
-    <div class="mic" id="mic" onclick="toggleMic()" title="点击说话">🎤</div>
+<div class="main" id="main">
+  <div class="voice-area">
+    <button class="mic-btn" id="mic" type="button">
+      <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.79-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-.98 1.14C5.66 15.22 8.03 17.5 11 17.92V20H8c-.55 0-1 .45-1 1s.45 1 1 1h8c.55 0 1-.45 1-1s-.45-1-1-1h-3v-2.08c2.97-.42 5.34-2.7 5.89-5.78.11-.6-.37-1.14-.98-1.14z"/></svg>
+    </button>
+    <div class="mic-label" id="micLabel">按住说话</div>
+    <div class="mic-hint" id="micHint"></div>
   </div>
-  <div class="voice-hint" id="vhint"></div>
-  <div class="suggest" id="suggest" style="display:none"></div>
-  <button class="btn" id="go" onclick="submit()">立即执行</button>
+  <div class="status-area" id="statusArea"></div>
 </div>
 
-<div class="sec-title">快捷场景</div>
-<div class="scen">
-  <div class="s" onclick="use('搜索《流浪地球》预告片并播放')"><div class="t">搜索并播放</div><div class="d">B站找预告片并播放</div></div>
-  <div class="s" onclick="use('百度一下 Python 异步编程')"><div class="t">搜任意问题</div><div class="d">百度/Google/知乎</div></div>
-  <div class="s" onclick="use('打开微信')"><div class="t">打开应用</div><div class="d">微信/终端/访达…</div></div>
-  <div class="s" onclick="use('截个屏')"><div class="t">系统操作</div><div class="d">截图/音量/锁屏</div></div>
-  <div class="s" onclick="use('在微信里输入你好')"><div class="t">应用内输入</div><div class="d">在微信/备忘录里打字</div></div>
-  <div class="s" onclick="use('帮我查一下奥本海默的评分')"><div class="t">查评分</div><div class="d">豆瓣评分</div></div>
-</div>
-
-<div id="run" style="display:none">
-  <div class="sec-title">任务执行状态</div>
-  <div class="card">
-    <div style="font-size:14px;font-weight:500" id="echo"></div>
-    <div id="understand"></div>
-    <div id="stages"></div>
-    <div class="meta" id="meta"></div>
+<div class="bottom-bar">
+  <div class="chips">
+    <button class="chip" onclick="quickSend('打开微信')">打开微信</button>
+    <button class="chip" onclick="quickSend('截个屏')">截个屏</button>
+    <button class="chip" onclick="quickSend('音量调大')">音量调大</button>
+    <button class="chip" onclick="quickSend('在微信里输入你好')">微信输入</button>
+    <button class="chip" onclick="quickSend('搜索《流浪地球》预告片并播放')">搜电影</button>
+  </div>
+  <div class="input-bar">
+    <input type="text" id="input" placeholder="输入指令，或按住上方麦克风说话…" autocomplete="off" enterkeyhint="send">
+    <button class="send-btn" id="send" onclick="submit()" type="button">
+      <svg viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+    </button>
   </div>
 </div>
 
-<div id="done" style="display:none">
-  <div class="sec-title">执行结果</div>
-  <div id="result"></div>
-  <button class="btn ghost" onclick="reset()">再试一次</button>
-</div>
-
-<div class="sec-title">最近任务</div>
-<div class="card" id="history"><div class="s-note">暂无任务</div></div>
-
-<div class="footer"><a href="/dashboard" target="_blank">运营数据看板 →</a></div>
-</div>
 <script>
-var cur=null,timer=null,hist=[];
-try{hist=JSON.parse(localStorage.getItem('lb_hist')||'[]')}catch(e){}
-var SUGGEST=[
- '搜索《流浪地球》预告片并播放','在B站搜沙丘2的花絮','帮我查一下奥本海默的评分',
- '百度一下 Python 异步编程','打开微信','打开下载文件夹','截个屏','音量调大一点',
- '在微信里输入你好','在终端里输入ls -la','在备忘录里写明天的工作计划',
- '把明天开会带电脑记到备忘录','锁屏','打开知乎','在GitHub搜 workbuddy','打开爱奇艺'
-];
-var rec=null;
-function esc(s){return (s||'').replace(/</g,'&lt;')}
-function use(v){var inp=document.getElementById('input');inp.value=v;inp.focus();onInput()}
-function onInput(){
-  var v=document.getElementById('input').value;
-  var box=document.getElementById('suggest');
-  if(!v.trim()){box.style.display='none';return}
-  var lv=v.toLowerCase();
-  var list=SUGGEST.filter(function(s){return s.indexOf(v)>=0||s.toLowerCase().indexOf(lv)>=0}).slice(0,4);
-  if(!list.length){box.style.display='none';return}
-  box.style.display='block';
-  box.innerHTML=list.map(function(s){var i=s.toLowerCase().indexOf(lv);var h=i>=0?esc(s.slice(0,i))+'<span class="kw">'+esc(s.slice(i,i+v.length))+'</span>'+esc(s.slice(i+v.length)):esc(s);var ss=s.replace(/'/g,"\\\\'");return '<div onclick="use(\\''+ss+'\\')">'+h+'</div>'}).join('');
-}
-document.getElementById('input').addEventListener('input',onInput);
-document.getElementById('input').addEventListener('keydown',function(e){if((e.metaKey||e.ctrlKey)&&e.keyCode==13){e.preventDefault();submit()}});
-function toggleMic(){
+var cur=null,timer=null;
+var rec=null,recognizing=false,voiceReady=false;
+function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+/* ---- 语音输入：按住说话，松开转文字 ---- */
+function initVoice(){
+  var btn=document.getElementById('mic'),label=document.getElementById('micLabel'),hint=document.getElementById('micHint');
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-  var hint=document.getElementById('vhint'),btn=document.getElementById('mic');
-  // 检查安全上下文（HTTPS 或 localhost）——Web Speech API 必须在安全环境
   if(!window.isSecureContext){
-    var httpsPort=Number(window.location.port||'8787')+1;
-    var httpsUrl='https://'+window.location.hostname+':'+httpsPort;
-    hint.innerHTML='<b>语音输入需要 HTTPS 安全环境</b><br>当前是 HTTP，浏览器禁止调用麦克风。<br>请用手机打开：<span style="color:#D85A30;font-weight:500">'+httpsUrl+'</span><br>首次打开点「高级 → 继续访问」信任证书即可。<br><span style="color:#888780">或直接点输入框，用键盘上的 🎤 语音输入（无需 HTTPS）</span>';
+    var hp=Number(window.location.port||'8787')+1;
+    var url='https://'+window.location.hostname+':'+hp;
+    btn.classList.add('disabled');
+    label.textContent='语音不可用';
+    hint.innerHTML='当前为 HTTP，需 HTTPS 才能用语音<br><a href="'+url+'">点此切换到 HTTPS →</a><br><span style="color:#B0AFAA">或直接用键盘语音输入</span>';
     return;
   }
-  if(!SR){hint.textContent='当前浏览器不支持语音输入，请用 Safari 或 Chrome';return}
-  if(rec){rec.stop();return}
-  rec=new SR();rec.lang='zh-CN';rec.continuous=false;rec.interimResults=true;
-  rec.onstart=function(){btn.classList.add('on');btn.textContent='●';hint.textContent='正在听…请说话'};
-  rec.onresult=function(e){
-    var interim='',final='';
-    for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}
-    var hint=document.getElementById('vhint'),inp=document.getElementById('input');
-    if(final){
-      var raw=final.trim();
-      hint.innerHTML='听到：<span style="color:#888780">'+esc(raw)+'</span> · 正在翻译为指令…';
-      fetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
-        .then(function(r){return r.json()})
-        .then(function(d){
-          inp.value=d.normalized;onInput();
-          hint.innerHTML='语音：<span style="color:#888780">'+esc(raw)+'</span>  →  规范指令：<span style="color:#D85A30">'+esc(d.normalized)+'</span>';
-          setTimeout(submit,500);
-        })
-        .catch(function(){inp.value=raw;onInput();hint.textContent='规范失败，已用原语音执行';setTimeout(submit,500)});
-    }else{hint.innerHTML='识别中：<span style="color:#888780">'+esc(interim)+'</span>'}
-  };
-  rec.onerror=function(ev){
-    var msg=ev.error||'未知';
-    if(msg==='not-allowed'||msg==='service-not-allowed'){hint.innerHTML='⚠ 麦克风权限被拒绝。请在浏览器设置中允许此网站访问麦克风后重试。'}
-    else if(msg==='network'){hint.textContent='语音识别网络错误，请检查网络后重试'}
-    else if(msg==='no-speech'){hint.textContent='没听到你说什么，请再试一次'}
-    else{hint.textContent='语音识别失败：'+msg}
-  };
-  rec.onend=function(){btn.classList.remove('on');btn.textContent='🎤';if(!hint.textContent.startsWith('识别')&&!hint.textContent.startsWith('⚠')&&!hint.innerHTML.startsWith('<b>'))hint.textContent='';rec=null};
-  rec.start();
+  if(!SR){
+    btn.classList.add('disabled');
+    label.textContent='浏览器不支持';
+    hint.textContent='请用 Safari 或 Chrome';
+    return;
+  }
+  voiceReady=true;
+  label.textContent='按住说话';
+
+  function startRec(){
+    if(!voiceReady||recognizing)return;
+    try{
+      rec=new SR();rec.lang='zh-CN';rec.continuous=false;rec.interimResults=true;
+      rec.onstart=function(){recognizing=true;btn.classList.add('recording');label.classList.add('recording');label.textContent='正在听…'};
+      rec.onresult=function(e){
+        var interim='',final='';
+        for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}
+        if(final){
+          var raw=final.trim();
+          label.innerHTML='正在翻译…';
+          fetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
+            .then(function(r){return r.json()})
+            .then(function(d){
+              document.getElementById('input').value=d.normalized;
+              label.innerHTML='已输入：<span style="color:#D85A30">'+esc(d.normalized)+'</span>';
+            })
+            .catch(function(){
+              document.getElementById('input').value=raw;
+              label.textContent='已输入（未规范化）';
+            });
+        }else{label.innerHTML='识别中：'+esc(interim)}
+      };
+      rec.onerror=function(ev){
+        var m=ev.error||'';
+        if(m==='not-allowed'||m==='service-not-allowed'){label.innerHTML='麦克风权限被拒<br>请在设置中允许';}
+        else if(m==='no-speech'){label.textContent='没听到，再试一次';}
+        else{label.textContent='语音错误：'+m;}
+      };
+      rec.onend=function(){
+        recognizing=false;btn.classList.remove('recording');label.classList.remove('recording');
+        if(label.textContent.indexOf('已输入')<0&&label.textContent.indexOf('翻译')<0){label.textContent='按住说话';}
+        rec=null;
+      };
+      rec.start();
+    }catch(e){label.textContent='启动失败';}
+  }
+  function stopRec(){if(rec&&recognizing){try{rec.stop()}catch(e){}}}
+
+  // 触摸事件（手机）
+  btn.addEventListener('touchstart',function(e){e.preventDefault();startRec()},{passive:false});
+  btn.addEventListener('touchend',function(e){e.preventDefault();stopRec()},{passive:false});
+  btn.addEventListener('touchcancel',function(e){stopRec()});
+  // 鼠标事件（桌面测试）
+  btn.addEventListener('mousedown',function(e){e.preventDefault();startRec()});
+  btn.addEventListener('mouseup',function(e){e.preventDefault();stopRec()});
+  btn.addEventListener('mouseleave',function(){stopRec()});
 }
-async function loadHistory(){
-  var r=await fetch('/api/tasks');var list=(await r.json()).filter(function(t){return t.id!==cur}).slice(0,5);
-  var all=hist.concat(list.map(function(t){return t.instruction})).filter(function(x,i,a){return a.indexOf(x)===i}).slice(0,5);
-  document.getElementById('history').innerHTML=all.length?all.map(function(ins){var ss=ins.replace(/'/g,"\\\\'");return '<div class="stage" style="cursor:pointer" onclick="use(\\''+ss+'\\')"><div class="s-body"><div class="s-name" style="font-size:13px">'+esc(ins)+'</div><div class="s-note">点击重发</div></div></div>'}).join(''):'<div class="s-note">暂无任务</div>';
+
+/* ---- 快捷指令 ---- */
+function quickSend(v){
+  var inp=document.getElementById('input');
+  inp.value=v;
+  submit();
 }
+
+/* ---- 提交任务 ---- */
 async function submit(){
   var v=document.getElementById('input').value.trim();
   if(!v){document.getElementById('input').focus();return}
-  document.getElementById('go').disabled=true;
-  hist=hist.filter(function(x){return x!==v});hist.unshift(v);hist=hist.slice(0,8);
-  try{localStorage.setItem('lb_hist',JSON.stringify(hist))}catch(e){}
-  var r=await fetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:v})});
-  cur=(await r.json()).id;
-  document.getElementById('run').style.display='block';
-  document.getElementById('echo').textContent='「'+v+'」';
-  document.getElementById('understand').innerHTML='';
-  document.getElementById('done').style.display='none';
-  clearInterval(timer);timer=setInterval(poll,900);poll();
+  document.getElementById('input').value='';
+  document.getElementById('send').style.opacity='.5';
+  try{
+    var r=await fetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:v})});
+    cur=(await r.json()).id;
+    var sa=document.getElementById('statusArea');
+    sa.innerHTML='<div class="task-card"><div class="echo">「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
+    clearInterval(timer);timer=setInterval(poll,900);poll();
+  }catch(e){
+    document.getElementById('statusArea').innerHTML='<div class="task-card"><div class="result-box err">网络错误：'+esc(e.message)+'</div></div>';
+  }
+  document.getElementById('send').style.opacity='1';
 }
-function reset(){clearInterval(timer);cur=null;document.getElementById('run').style.display='none';document.getElementById('done').style.display='none';document.getElementById('go').disabled=false;loadHistory()}
+
+/* ---- 轮询任务状态 ---- */
 async function poll(){
+  if(!cur)return;
   var r=await fetch('/api/task/'+cur);if(!r.ok)return;var t=await r.json();
+  var u=document.getElementById('understand');
   if(t.intent&&t.intent._desc&&t.stages[0].state==='done'){
-    document.getElementById('understand').innerHTML='<div class="understand"><b>我理解你要：</b>'+esc(t.intent._desc)+'</div>';
+    u.innerHTML='<div class="understand"><b>我理解：</b>'+esc(t.intent._desc)+'</div>';
   }
   document.getElementById('stages').innerHTML=t.stages.map(function(s){
     var d=s.state==='done'?'done':s.state==='running'?'running':s.state==='failed'?'failed':'';
-    return '<div class="stage"><div class="s-dot '+d+'"></div><div class="s-body"><div class="s-name">'+s.name+'</div>'+(s.note?'<div class="s-note">'+esc(s.note)+'</div>':'')+'</div></div>'
+    return '<div class="stage-row"><div class="stage-dot '+d+'"></div><div class="stage-body"><div class="stage-name">'+s.name+'</div>'+(s.note?'<div class="stage-note">'+esc(s.note)+'</div>':'')+'</div></div>';
   }).join('');
   if(t.status==='processing'){document.getElementById('meta').textContent='已进行 '+((Date.now()-t.createdAt)/1000).toFixed(1)+' 秒…';return}
-  clearInterval(timer);
-  document.getElementById('go').disabled=false;
+  clearInterval(timer);cur=null;
   document.getElementById('meta').textContent='总耗时 '+((t.finishedAt-t.createdAt)/1000).toFixed(1)+' 秒';
-  var box=document.getElementById('result');
-  if(t.status==='success'){box.innerHTML='<div class="result ok"><b>任务完成</b><br>'+esc(t.result)+'</div><div class="meta">去旁边的 Mac 看看 — 任务已就位</div>'}
-  else{box.innerHTML='<div class="result err"><b>任务失败</b><br>'+esc(t.error)+'</div><div class="meta">已记录到运营看板 · 常见原因：权限未授权、应用未安装</div>'}
-  document.getElementById('done').style.display='block';
-  loadHistory();
+  var rb=document.getElementById('resultBox');
+  if(t.status==='success'){rb.innerHTML='<div class="result-box ok"><b>✅ 任务完成</b><br>'+esc(t.result)+'</div>'}
+  else{rb.innerHTML='<div class="result-box err"><b>❌ 任务失败</b><br>'+esc(t.error)+'</div><div class="result-meta">常见原因：权限未授权、应用未安装</div>'}
+  document.getElementById('send').style.opacity='1';
 }
-// 页面加载时检测语音可用性
-(function(){
-  var hint=document.getElementById('vhint'),mic=document.getElementById('mic');
-  if(window.isSecureContext){
-    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-    if(SR){mic.style.borderColor='#D85A30';mic.style.color='#D85A30';hint.textContent='🎤 语音就绪，点击说话';}
-    else{mic.style.opacity='.4';hint.textContent='当前浏览器不支持语音，请用 Safari 或 Chrome';}
-  }else{
-    var httpsPort=Number(window.location.port||'8787')+1;
-    mic.style.opacity='.5';
-    hint.innerHTML='<span style="color:#BA7517">⚠ 当前为 HTTP，语音不可用。</span> <span style="cursor:pointer;color:#D85A30;text-decoration:underline" onclick="location.href=\'https://'+window.location.hostname+':'+httpsPort+'\'">点此切换到 HTTPS 开启语音 →</span>';
-  }
-})();
-loadHistory();
+
+/* ---- 回车提交 ---- */
+document.getElementById('input').addEventListener('keydown',function(e){if(e.keyCode==13){e.preventDefault();submit()}});
+
+initVoice();
 </script></body></html>`;
 
 /* ---------------- 运营看板 ---------------- */
