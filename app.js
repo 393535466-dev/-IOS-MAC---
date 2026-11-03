@@ -252,6 +252,54 @@ function describeIntent(it) {
   }
 }
 
+/* ---------------- 语音指令规范化（口语 → 清晰自然语言指令） ---------------- */
+function normalizeSpeech(text) {
+  let s = (text || '').trim();
+  // 动词 + "一下/个" 统一为规范动词
+  s = s.replace(/播放一下|放一下|播一下|放个|播个/g, '播放');
+  s = s.replace(/看下|看一下|看个|瞅一下|瞅瞅/g, '播放');
+  s = s.replace(/搜下|搜一下|搜个/g, '搜索');
+  // 去口水词、冗余语气（此时动词已规范，剩余"一下"安全去除）
+  s = s.replace(/那个啥|那个|这那个|呃|嗯|啊|嘛|哦|就是|然后|一下|帮我看|帮我去|麻烦|请|来一下|给我|稍微|特别|就是说|对吧/g, '');
+  // 影片名补书名号（便于解析与展示）
+  for (const name of HOT_MOVIES) {
+    if (s.includes(name) && !s.includes('《' + name + '》')) s = s.split(name).join('《' + name + '》');
+  }
+  // 引号统一为书名号
+  s = s.replace(/["“”](.+?)["“”]/g, '《$1》');
+  // "预告片播放" → "预告片并播放"，更通顺
+  s = s.replace(/(预告片|正片|花絮|解说)播放/g, '$1并播放');
+  // 结尾孤立动词补全（避免误伤已规范的"播放"）
+  s = s.replace(/([^播])放$/, '$1播放');
+  // 整理空白与重复标点
+  s = s.replace(/\s+/g, ' ').replace(/，，|。。/g, '，').replace(/^，|，$/g, '').trim();
+  return s || (text || '').trim();
+}
+
+async function normalizeInstruction(text) {
+  // 配置了 LLM 时，用大模型把口语改写为简洁指令；否则本地规则规范化
+  const base = process.env.LLM_BASE_URL, key = process.env.LLM_API_KEY;
+  if (base && key) {
+    try {
+      const r = await fetch(base.replace(/\/$/, '') + '/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        body: JSON.stringify({
+          model: process.env.LLM_MODEL || 'gpt-4o-mini', temperature: 0.2,
+          messages: [
+            { role: 'system', content: '把用户语音识别出的口语改写为一句简洁、规范的中文指令：去掉口水词(那个/呃/嗯/就是/然后/一下)，影片名用书名号《》，动词明确(搜索/播放/打开/查评分)。只输出改写后的指令本身，不要解释。例：「那个帮我搜一下流浪地球的预告片然后放一下」→「搜索《流浪地球》预告片并播放」' },
+            { role: 'user', content: text },
+          ],
+        }),
+      });
+      const j = await r.json();
+      const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+      if (c) return c.trim().replace(/^["“”]|["“”]$/g, '');
+    } catch (e) { /* 降级本地 */ }
+  }
+  return normalizeSpeech(text);
+}
+
 /* ---------------- 执行引擎 ---------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sh = (cmd) => new Promise((res, rej) => {
@@ -474,9 +522,19 @@ function toggleMic(){
   rec.onresult=function(e){
     var interim='',final='';
     for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}
-    var inp=document.getElementById('input');
-    if(final){inp.value=(inp.value.replace(/正在听.*/,'')+final).trim();onInput()}
-    else{hint.textContent='识别中：'+interim}
+    var hint=document.getElementById('vhint'),inp=document.getElementById('input');
+    if(final){
+      var raw=final.trim();
+      hint.innerHTML='听到：<span style="color:#888780">'+esc(raw)+'</span> · 正在翻译为指令…';
+      fetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
+        .then(function(r){return r.json()})
+        .then(function(d){
+          inp.value=d.normalized;onInput();
+          hint.innerHTML='语音：<span style="color:#888780">'+esc(raw)+'</span>  →  规范指令：<span style="color:#D85A30">'+esc(d.normalized)+'</span>';
+          setTimeout(submit,500);
+        })
+        .catch(function(){inp.value=raw;onInput();hint.textContent='规范失败，已用原语音执行';setTimeout(submit,500)});
+    }else{hint.innerHTML='识别中：<span style="color:#888780">'+esc(interim)+'</span>'}
   };
   rec.onerror=function(ev){hint.textContent='语音识别失败：'+(ev.error||'未知')};
   rec.onend=function(){btn.classList.remove('on');btn.textContent='🎤';if(!hint.textContent.startsWith('识别'))hint.textContent='';rec=null};
@@ -594,6 +652,18 @@ const server = http.createServer((req, res) => {
     const t = pick(m[1]);
     if (!t) { res.statusCode = 404; return res.end(JSON.stringify({ error: 'task not found' })); }
     return res.end(JSON.stringify(t));
+  }
+  if (req.method === 'POST' && url.pathname === '/api/normalize') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { text } = JSON.parse(body || '{}');
+        const normalized = await normalizeInstruction(text);
+        res.end(JSON.stringify({ raw: text, normalized }));
+      } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad request' })); }
+    });
+    return;
   }
   if (req.method === 'POST' && url.pathname === '/api/task') {
     let body = '';
