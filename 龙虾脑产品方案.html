@@ -46,7 +46,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
 <body><div class="wrap">
 
 <header>
-  <span class="badge">MVP · 产品方案 · 2026-11-03</span>
+  <span class="badge">通用 Mac 遥控器 · 产品方案 · 2026-11-03</span>
   <h1>龙虾脑 LobsterBrain</h1>
   <div class="sub">一句话指挥你的电脑 —— 手机输入自然语言，Mac 替你干活，结果回到手机</div>
 </header>
@@ -66,11 +66,11 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     </ul></div>
   </div>
   <div class="quote">为什么叫「龙虾脑」：龙虾用一套简单的神经回路就能稳定驱动复杂行为 —— 我们想让电脑也拥有一颗这样「听得懂人话、按套路办事」的简单大脑。</div>
-  <p><b>本 MVP 场景：</b>「搜索一部热门电影并播放相关视频」。选择它的原因：意图单一清晰、结果可感知（视频直接在 Mac 上播）、失败路径真实存在（权限 / 网络.movie 缺失），足以验证完整产品闭环。</p>
+  <p><b>起步场景：</b>「搜索一部热门电影并播放相关视频」—— 意图单一清晰、结果可感知、失败路径真实（权限 / 网络缺失），用于验证完整闭环。<b>当前版本已扩展为通用 Mac 遥控器</b>：一句话即可驱动打开应用、自动输入、发微信、系统操作、搜索任意平台，并在手机端用触控板直接操控 Mac 光标（详见第 4 节能力清单）。</p>
 </section>
 
 <section>
-  <h2><span class="no">2</span>产品闭环流程（已在 Demo 中实现）</h2>
+  <h2><span class="no">2</span>产品闭环流程（已在当前版本中实现）</h2>
   <svg viewBox="0 0 760 190" width="100%" xmlns="http://www.w3.org/2000/svg">
     <defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#D85A30" stroke-width="1.5" stroke-linecap="round"/></marker></defs>
     <rect x="20" y="55" width="130" height="66" rx="10" fill="#FAECE7" stroke="#993C1D" stroke-width="0.5"/>
@@ -79,7 +79,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <line x1="150" y1="88" x2="188" y2="88" stroke="#D85A30" stroke-width="1.5" marker-end="url(#a)"/>
     <rect x="190" y="55" width="130" height="66" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
     <text x="255" y="80" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">意图解析</text>
-    <text x="255" y="100" text-anchor="middle" font-size="11" fill="#534AB7">提取「搜索电影+播放」</text>
+    <text x="255" y="100" text-anchor="middle" font-size="11" fill="#534AB7">理解意图·规划执行</text>
     <line x1="320" y1="88" x2="358" y2="88" stroke="#D85A30" stroke-width="1.5" marker-end="url(#a)"/>
     <rect x="360" y="55" width="130" height="66" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
     <text x="425" y="80" text-anchor="middle" font-size="13" font-weight="500" fill="#3C3489">任务规划</text>
@@ -87,7 +87,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <line x1="490" y1="88" x2="528" y2="88" stroke="#D85A30" stroke-width="1.5" marker-end="url(#a)"/>
     <rect x="530" y="55" width="130" height="66" rx="10" fill="#E1F5EE" stroke="#0F6E56" stroke-width="0.5"/>
     <text x="595" y="80" text-anchor="middle" font-size="13" font-weight="500" fill="#085041">驱动 Mac 执行</text>
-    <text x="595" y="100" text-anchor="middle" font-size="11" fill="#0F6E56">唤起浏览器·搜索·播放</text>
+    <text x="595" y="100" text-anchor="middle" font-size="11" fill="#0F6E56">驱动 Mac 真实操作</text>
     <path d="M595 121 C 595 160, 85 160, 85 121" fill="none" stroke="#D85A30" stroke-width="1.5" marker-end="url(#a)"/>
     <text x="340" y="168" text-anchor="middle" font-size="12" fill="#993C1D">状态 + 结果实时回传手机（每 0.9s 轮询，四阶段：解析 → 规划 → 执行 → 回传）</text>
     <text x="340" y="35" text-anchor="middle" font-size="12" fill="#888780">异常分支：任一阶段失败即中止，向手机推送失败原因与重试引导，并落库进入运营看板</text>
@@ -104,38 +104,63 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
 <section>
   <h2><span class="no">3</span>Demo 说明（最小可运行）</h2>
   <table class="kv">
-    <tr><td>技术形态</td><td>单文件 <code>app.js</code>（Node 18+，零依赖），一条命令启动：<code>node app.js</code></td></tr>
-    <tr><td>手机端</td><td>同一 Wi-Fi 下访问 <code>http://192.168.8.45:8787</code>（本机 <code>localhost:8787</code>）</td></tr>
-    <tr><td>运营看板</td><td><code>/dashboard</code></td></tr>
-    <tr><td>真实执行</td><td>服务端通过 <code>open</code> 唤起 Mac 浏览器打开 B 站搜索页；若 Chrome 开启「允许 Apple 事件 JavaScript」，会自动点击首个视频完成播放，否则优雅降级为「轻点即可播放」提示</td></tr>
-    <tr><td>失败演示</td><td>输入含「失败 / 异常 / 权限」的指令，可在第 2 阶段触发模拟异常，完整走一遍异常反馈链路</td></tr>
-    <tr><td>数据存储</td><td><code>tasks.json</code> 本地落库，重启不丢；看板预置演示数据便于首屏展示</td></tr>
+    <tr><td>技术形态</td><td>单文件 <code>app.js</code>（Node 18+，零依赖），<code>node app.js</code> 一键启动；HTTP(8787) + HTTPS(8788) 双端口</td></tr>
+    <tr><td>手机端</td><td>同 Wi-Fi 访问 <code>https://192.168.8.45:8788</code>（语音，首次信任证书）/ <code>http://192.168.8.45:8787</code>（文字）；本机 <code>localhost:8787</code></td></tr>
+    <tr><td>安全</td><td>局域网令牌鉴权 + 自定义密码，本机 localhost 免验证；服务运行于 Mac 本机，<b>不部署 Vercel</b></td></tr>
+    <tr><td>核心能力</td><td>打开应用 / 文件 / 网址、向任意应用自动输入、一句话发微信、系统操作、任意平台搜索、手机触控板控制 Mac 光标（详见第 4 节）</td></tr>
+    <tr><td>运营看板</td><td><code>/dashboard</code>：累计任务、成功率、平均耗时、近 7 日任务量、最近明细</td></tr>
+    <tr><td>数据存储</td><td><code>tasks.json</code> 本地落库，重启不丢</td></tr>
   </table>
 </section>
 
 <section>
-  <h2><span class="no">4</span>体验边界（MVP 有意不做什么）</h2>
+  <h2><span class="no">4</span>核心能力清单（当前版本已实现）</h2>
+  <p>下表汇总已落地到 <code>app.js</code> 的真实能力，全部经实机验证。✅ = 已实现并验证。</p>
+  <table>
+    <tr><th>能力域</th><th>能力</th><th>说明 / 触发方式</th><th>状态</th></tr>
+    <tr><td rowspan="4"><b>指令理解</b></td><td>自然语言解析</td><td>规则引擎优先，明确指令秒级；模糊指令回落可选 LLM</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>语音规范化</td><td>口语 → 清晰指令（去口水词、动词规范、片名补《》）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>复合指令</td><td>「打开微信——输入你好」逐段执行</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>应用名识别</td><td>长词优先匹配，中文名 → 真实应用名归一化</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="4"><b>Mac 操控</b></td><td>打开应用 / 文件 / 网址</td><td>open 动作，支持文件夹、网站、URL</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>任意应用自动输入</td><td>type：打开 → 粘贴，微信 / 豆包 / WorkBuddy / 浏览器等</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>系统操作</td><td>音量 ± / 静音 / 亮度 / 截图 / 锁屏 / 清废纸篓 / 系统设置</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>任意平台搜索</td><td>百度 / Google / B站 / 优酷 / 腾讯视频 / YouTube / 豆瓣 / 知乎 / 微博 / GitHub / 淘宝 / 京东</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="2"><b>通讯</b></td><td>一句话发微信</td><td>「给 X 发微信：内容」→ 搜联系人 → 进会话 → 发送</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>发短信</td><td>Messages，复用输入链路</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>鼠标控制</b></td><td>手机触控板</td><td>手机端触控板驱动 Mac 光标移动 / 点击（CoreGraphics，零依赖），面板固定置顶</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>语音输入</b></td><td>按住说话</td><td>Web Speech API，需 HTTPS(8788)，实时「正在听」反馈</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="2"><b>安全</b></td><td>令牌鉴权</td><td>局域网须带令牌 / 自定义密码，本机 localhost 免验证</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>本地运行</td><td>服务运行于 Mac 本机，不部署 Vercel</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="2"><b>可观测</b></td><td>状态回传</td><td>四阶段时间轴（解析 → 规划 → 执行 → 回传）+ 可视化</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>运营看板</td><td>/dashboard：成功率、平均耗时、近 7 日柱状图、明细</td><td class="ok">✅ 已实现</td></tr>
+  </table>
+  <p style="margin-top:10px;font-size:13px;color:#888780">辅助功能：自动输入 / 鼠标点击依赖 macOS「辅助功能」授权，需在系统设置中授权运行 <code>node app.js</code> 的程序（终端 / VS Code / WorkBuddy 等）。</p>
+</section>
+
+<section>
+  <h2><span class="no">5</span>体验边界（当前版本已突破 MVP）</h2>
   <div class="grid2">
-    <div class="mini"><h3 class="ok">MVP 内做到</h3><ul>
-      <li>单一意图（搜电影并播放）端到端闭环</li>
-      <li>四阶段状态透明回传</li>
-      <li>成功 / 失败 / 降级三种终态</li>
-      <li>执行记录落库 + 运营看板</li>
-      <li>热门榜单兜底泛化指令（可运营配置）</li>
+    <div class="mini"><h3 class="ok">当前版本已做到</h3><ul>
+      <li>通用指令闭环：打开应用 / 搜索 / 自动输入 / 发微信 / 系统操作</li>
+      <li>规则引擎优先 + 可选 LLM 混合解析，明确指令秒级响应</li>
+      <li>向任意 macOS 应用自动输入（微信 / 豆包 / WorkBuddy / 浏览器等）</li>
+      <li>手机触控板驱动 Mac 真实光标 + 一句话发微信</li>
+      <li>语音输入（HTTPS 安全上下文）+ 四阶段状态透明回传</li>
+      <li>局域网令牌鉴权 + 自定义密码，本机免验证</li>
     </ul></div>
-    <div class="mini"><h3 class="err">MVP 外明确不做</h3><ul>
+    <div class="mini"><h3 class="err">当前版本仍不做</h3><ul>
       <li>多意图 / 多步复杂任务编排（如「下载并压缩并邮件发送」）</li>
-      <li>账号体系与多用户隔离 —— 单设备演示形态</li>
-      <li>任意应用的通用操控 —— 仅验证浏览器这一个执行器</li>
-      <li>真正的 LLM 意图解析 —— 先用规则引擎验证流程，模型后置</li>
-      <li>公网部署与安全审计</li>
+      <li>账号体系与多用户隔离 —— 当前为单设备形态</li>
+      <li>删除文件、批量化破坏性等高危不可逆动作（需产品化后强制二次确认）</li>
+      <li>公网部署 —— 控制能力依赖 Mac 本机，坚持本地运行不上 Vercel</li>
     </ul></div>
   </div>
   <p style="margin-top:10px"><b>异常策略分层：</b>解析失败（引导换说法）→ 权限失败（给出具体授权指引）→ 执行失败（网络 / 应用不可用，可重试）→ 降级成功（自动播放不可用时降级为半自动，明确告知用户需要手动补一步）。原则：<b>宁可明确失败，不做静默失败</b>。</p>
 </section>
 
 <section>
-  <h2><span class="no">5</span>数据指标</h2>
+  <h2><span class="no">6</span>数据指标</h2>
   <table>
     <tr><th>层级</th><th>指标</th><th>定义与看板位置</th><th>目标（MVP 验证期）</th></tr>
     <tr><td><b>北极星</b></td><td>周成功完成任务数</td><td>status = success 的任务量（按周去重聚合）</td><td>验证「有人持续用它让电脑干活」</td></tr>
@@ -149,11 +174,11 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
 </section>
 
 <section>
-  <h2><span class="no">6</span>MVP 后续产品化路径</h2>
+  <h2><span class="no">7</span>后续产品化路径</h2>
   <div class="road">
     <div class="phase"><div class="p-dot">1</div><div class="p-body">
-      <h3>跑通闭环 <span class="tag">当前阶段</span></h3>
-      <p>单场景（搜电影+播放）单设备，验证「手机 → Mac → 手机」的完整体验与数据链路。已交付：Demo + 看板 + 本方案。</p>
+      <h3>跑通闭环 <span class="tag">已完成</span></h3>
+      <p>单设备「手机 → Mac → 手机」完整体验与数据链路已打通：自然语言 / 语音 / 触控板三种输入，打开应用、自动输入、发微信、系统操作、搜索等多类执行器，四阶段状态回传 + 运营看板。已交付：Demo + 看板 + 本方案。</p>
     </div></div>
     <div class="phase"><div class="p-dot">2</div><div class="p-body">
       <h3>更聪明、更稳 <span class="tag">1-2 周</span></h3>
@@ -179,11 +204,11 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
 </section>
 
 <section>
-  <h2><span class="no">7</span>风险与边界声明</h2>
+  <h2><span class="no">8</span>风险与边界声明</h2>
   <ul>
     <li><b>权限与隐私</b>：驱动电脑属于高敏感能力，正式产品必须做到「逐权限明示授权 + 任务级操作日志可回溯」，Demo 仅在用户本机运行，不上传任何数据。</li>
     <li><b>自动化脆弱性</b>：基于选择器的自动点击对页面改版敏感，产品化需转向系统级 API（Accessibility / AppleScript 字典）而非页面 DOM。</li>
-    <li><b>滥用边界</b>：MVP 不支持删除文件、发送消息等不可逆操作；产品化后以「操作白名单 + 高危动作二次确认」为底线。</li>
+    <li><b>滥用边界</b>：当前版本已支持「发消息」等不可逆操作，一律走「操作白名单 + 显式指令确认」底线；删除文件、批量化破坏性等高危动作仍禁用，产品化后强制高危二次确认。</li>
   </ul>
 </section>
 
