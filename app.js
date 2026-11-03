@@ -67,6 +67,46 @@ const ACTION_LABEL = { search: '搜索', play: '播放', open: '打开', rating:
 let tasks = [];
 function load() { try { tasks = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch (e) { seed(); save(); } }
 function save() { fs.writeFileSync(DATA_FILE, JSON.stringify(tasks, null, 2)); }
+
+/* ---------------- LLM 配置（文件持久化，网页可配） ---------------- */
+const LLM_CFG_FILE = path.join(__dirname, 'llm-config.json');
+const LLM_PRESETS = [
+  { id: 'deepseek', name: 'DeepSeek（推荐·国内直连·便宜）', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
+  { id: 'kimi', name: 'Kimi / 月之暗面', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+  { id: 'qwen', name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-turbo' },
+  { id: 'openai', name: 'OpenAI（需代理）', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+  { id: 'custom', name: '自定义（OpenAI 兼容）', baseUrl: '', model: '' },
+];
+function readLLMConfig() {
+  try { return JSON.parse(fs.readFileSync(LLM_CFG_FILE, 'utf8')); }
+  catch { return null; }
+}
+function writeLLMConfig(cfg) {
+  fs.writeFileSync(LLM_CFG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
+}
+function llmConfig() {
+  const cfg = readLLMConfig() || {};
+  return {
+    baseUrl: cfg.baseUrl || process.env.LLM_BASE_URL || '',
+    apiKey: cfg.apiKey || process.env.LLM_API_KEY || '',
+    model: cfg.model || process.env.LLM_MODEL || 'deepseek-chat',
+    enabled: !!(cfg.apiKey || process.env.LLM_API_KEY),
+  };
+}
+
+/* ---------------- 辅助功能权限检测（type 自动输入需要） ---------------- */
+async function checkAccessibility() {
+  try {
+    // 用一个需要辅助功能权限的无害操作来探测——获取前台进程属性
+    await sh(`osascript -e 'tell application "System Events" to get name of process 1 whose frontmost is true' 2>&1`);
+    // 检查输出是否包含权限错误
+    const r2 = await sh(`osascript -e 'tell application "System Events" to keystroke ""' 2>&1`);
+    return !r2.includes('not allowed') && !r2.includes('-10004') && !r2.includes('-1743');
+  } catch { return false; }
+}
+async function openAccessibilityPrefs() {
+  try { await sh(`open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"`); } catch {}
+}
 function pick(id) { return tasks.find(t => t.id === id); }
 
 function seed() {
@@ -256,17 +296,17 @@ function localParse(text) {
 }
 
 async function callLLM(text) {
-  const base = process.env.LLM_BASE_URL, key = process.env.LLM_API_KEY;
-  if (!base || !key) return null;
+  const cfg = llmConfig();
+  if (!cfg.enabled) return null;
   try {
-    const r = await fetch(base.replace(/\/$/, '') + '/chat/completions', {
+    const r = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
       body: JSON.stringify({
-        model: process.env.LLM_MODEL || 'gpt-4o-mini', temperature: 0.2,
+        model: cfg.model, temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub}。action取值search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)；target是主要对象(影片名/关键词/应用名/要记的内容)或null；platform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban；contentType取值预告片/正片/花絮/解说或null；sub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。只输出JSON。' },
+          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=type时指定目标应用(如"微信""备忘录""终端")，无指定应用时app=null。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n只输出JSON，不要解释。' },
           { role: 'user', content: text },
         ],
       }),
@@ -331,14 +371,14 @@ function normalizeSpeech(text) {
 
 async function normalizeInstruction(text) {
   // 配置了 LLM 时，用大模型把口语改写为简洁指令；否则本地规则规范化
-  const base = process.env.LLM_BASE_URL, key = process.env.LLM_API_KEY;
-  if (base && key) {
+  const cfg = llmConfig();
+  if (cfg.enabled) {
     try {
-      const r = await fetch(base.replace(/\/$/, '') + '/chat/completions', {
+      const r = await fetch(cfg.baseUrl.replace(/\/$/, '') + '/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key },
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
         body: JSON.stringify({
-          model: process.env.LLM_MODEL || 'gpt-4o-mini', temperature: 0.2,
+          model: cfg.model, temperature: 0.2,
           messages: [
             { role: 'system', content: '把用户语音识别出的口语改写为一句简洁、规范的中文指令：去掉口水词(那个/呃/嗯/就是/然后/一下)，影片名用书名号《》，动词明确(搜索/播放/打开/查评分)。只输出改写后的指令本身，不要解释。例：「那个帮我搜一下流浪地球的预告片然后放一下」→「搜索《流浪地球》预告片并播放」' },
             { role: 'user', content: text },
@@ -415,23 +455,47 @@ async function runTask(t) {
         await sh(`open -a "Notes"`);
         execNote = result = '内容已复制到剪贴板，备忘录已打开，按 Cmd+V 粘贴';
       } else if (it.action === 'type') {
-        // 1. 写入剪贴板
-        const tmp = path.join(os.tmpdir(), 'lb_type_' + Date.now() + '.txt');
-        fs.writeFileSync(tmp, String(it.target || ''), 'utf8');
-        await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
-        // 2. 打开应用（如果有指定）
+        const textToType = String(it.target || '');
+        const appName = it.appName || it.app || '当前应用';
+        // 1. 打开应用（如果有指定）
         if (it.app) {
           await sh(`open -a "${it.app}"`);
-          await sleep(1500);
+          await sleep(1800);
         } else {
           await sleep(300);
         }
-        // 3. 模拟 Cmd+V 粘贴（需要辅助功能权限）
-        try {
-          await sh(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
-          execNote = result = '已在「' + (it.appName || it.app || '当前应用') + '」中粘贴输入：「' + it.target + '」';
-        } catch (e) {
-          execNote = result = '内容已复制到剪贴板' + (it.app ? '，「' + (it.appName || it.app) + '」已打开' : '') + '。请手动按 Cmd+V 粘贴（需在「系统设置 → 隐私与安全 → 辅助功能」中授权终端）';
+        // 2. 检测辅助功能权限
+        const hasPermission = await checkAccessibility();
+        if (!hasPermission) {
+          // 自动打开设置页引导授权
+          await openAccessibilityPrefs();
+          // 同时把文字写入剪贴板作为降级
+          const tmp = path.join(os.tmpdir(), 'lb_type_' + Date.now() + '.txt');
+          fs.writeFileSync(tmp, textToType, 'utf8');
+          await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
+          execNote = result = '检测到辅助功能未授权，已自动打开系统设置。请在「隐私与安全 → 辅助功能」中添加并开启当前终端，然后重新执行此指令即可自动输入。文字已暂存剪贴板，你也可以先手动按 Cmd+V。';
+          t.needPermission = true;  // 标记需要权限，前端可展示引导
+        } else {
+          // 3. 有权限：用 AppleScript 直接输入文字（不污染剪贴板）
+          // 转义 AppleScript 字符串中的特殊字符
+          const escaped = textToType.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          try {
+            // 先用 clipboard 设置内容，再 keystroke "v" —— 比 keystroke 文字更可靠（支持中文）
+            const script = `osascript -e 'set the clipboard to "${escaped}"' -e 'tell application "System Events" to keystroke "v" using command down'`;
+            await sh(script);
+            execNote = result = '已在「' + appName + '」中自动输入：「' + textToType + '」';
+          } catch (e) {
+            // 降级：写文件到剪贴板 + 粘贴
+            const tmp = path.join(os.tmpdir(), 'lb_type_' + Date.now() + '.txt');
+            fs.writeFileSync(tmp, textToType, 'utf8');
+            await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
+            try {
+              await sh(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
+              execNote = result = '已在「' + appName + '」中自动输入：「' + textToType + '」';
+            } catch (e2) {
+              execNote = result = '输入失败：' + (e2.message || '未知错误') + '。文字已复制到剪贴板，请手动按 Cmd+V';
+            }
+          }
         }
       } else if (it.action === 'open') {
         if (it.sub === 'open_app') { await sh(`open -a "${it.app}"`); execNote = result = '已打开应用：' + it.target; }
@@ -562,7 +626,9 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .send-btn:active{opacity:.7}
 .send-btn svg{width:18px;height:18px;fill:#fff}
 .dash-fab{position:fixed;top:12px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
+.cfg-fab{position:fixed;top:12px;right:56px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
 </style></head><body>
+<a href="/config" class="cfg-fab" target="_blank">配置</a>
 <a href="/dashboard" class="dash-fab" target="_blank">看板</a>
 <div class="main" id="main">
   <div class="voice-area">
@@ -709,7 +775,11 @@ async function poll(){
   clearInterval(timer);cur=null;
   document.getElementById('meta').textContent='总耗时 '+((t.finishedAt-t.createdAt)/1000).toFixed(1)+' 秒';
   var rb=document.getElementById('resultBox');
-  if(t.status==='success'){rb.innerHTML='<div class="result-box ok"><b>✅ 任务完成</b><br>'+esc(t.result)+'</div>'}
+  if(t.status==='success'){
+    var permHint='';
+    if(t.needPermission){permHint='<div class="result-meta" style="margin-top:8px"><a href="/config" target="_blank" style="color:#555;text-decoration:underline">→ 前往配置页授权辅助功能，授权后可自动输入</a></div>'}
+    rb.innerHTML='<div class="result-box ok"><b>✅ 任务完成</b><br>'+esc(t.result)+'</div>'+permHint;
+  }
   else{rb.innerHTML='<div class="result-box err"><b>❌ 任务失败</b><br>'+esc(t.error)+'</div><div class="result-meta">常见原因：权限未授权、应用未安装</div>'}
   document.getElementById('send').style.opacity='1';
 }
@@ -779,13 +849,221 @@ async function refresh(){
 refresh();setInterval(refresh,5000);
 </script></body></html>`;
 
+/* ---------------- LLM 配置页 ---------------- */
+const CONFIG_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>龙虾脑 · 配置</title><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:#fff;color:#1A1A1A;line-height:1.6;padding:20px;max-width:520px;margin:0 auto}
+h1{font-size:20px;font-weight:600;margin-bottom:4px}
+.sub{font-size:13px;color:#888;margin-bottom:24px}
+.back{font-size:13px;color:#555;text-decoration:none;display:inline-block;margin-bottom:20px}
+.section{border:1px solid #E8E5DF;border-radius:12px;padding:16px;margin-bottom:16px}
+.section h2{font-size:15px;font-weight:600;margin-bottom:12px}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:13px;font-weight:500;margin-bottom:4px;color:#555}
+.field input,.field select{width:100%;border:1px solid #E8E5DF;border-radius:8px;padding:10px 12px;font-size:14px;font-family:inherit;outline:none;background:#FAFAF8}
+.field input:focus,.field select:focus{border-color:#1A1A1A;background:#fff}
+.row{display:flex;gap:8px;align-items:center}
+.row input{flex:1}
+.hint{font-size:11px;color:#999;margin-top:4px}
+.btn{display:inline-block;padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:500;cursor:pointer;font-family:inherit}
+.btn-primary{background:#1A1A1A;color:#fff}
+.btn-primary:active{background:#333}
+.btn-ghost{background:#fff;color:#555;border:1px solid #E8E5DF}
+.btn-row{display:flex;gap:8px;margin-top:8px}
+.status{padding:10px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
+.status.on{background:#F7F7F7;color:#333}
+.status.off{background:#FAFAF8;color:#999}
+.status b{font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.dot.on{background:#333}.dot.off{background:#CCC}
+.tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:4px;margin-left:6px}
+.tag.llm{background:#EEE;color:#555}
+.tag.rule{background:#F5F5F5;color:#999}
+.perm-box{font-size:12px;color:#666;padding:12px;border:1px solid #E8E5DF;border-radius:8px;margin-top:8px}
+.perm-box.warn{border-color:#DDD;background:#FAFAF8;color:#999}
+</style></head><body>
+<a class="back" href="/">← 返回</a>
+<h1>龙虾脑配置</h1>
+<div class="sub">接入大模型让龙虾脑更智能 · 配置辅助功能权限让自动输入生效</div>
+
+<div class="section">
+  <h2>大模型接入 <span id="llmTag" class="tag rule">规则引擎</span></h2>
+  <div id="llmStatus" class="status off"><span class="dot off"></span>未配置，使用本地规则引擎</div>
+  <div class="field">
+    <label>选择服务</label>
+    <select id="preset" onchange="onPreset()">
+      <option value="">— 选择预设 —</option>
+    </select>
+  </div>
+  <div class="field">
+    <label>API Base URL</label>
+    <input id="baseUrl" placeholder="https://api.deepseek.com/v1">
+    <div class="hint">OpenAI 兼容接口地址</div>
+  </div>
+  <div class="field">
+    <label>API Key</label>
+    <input id="apiKey" type="password" placeholder="sk-...">
+    <div class="hint">推荐 DeepSeek（国内直连、便宜）：<a href="https://platform.deepseek.com/api_keys" target="_blank">获取 API Key →</a></div>
+  </div>
+  <div class="field">
+    <label>模型名称</label>
+    <input id="model" placeholder="deepseek-chat">
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="save()">保存配置</button>
+    <button class="btn btn-ghost" onclick="testConn()">测试连接</button>
+  </div>
+  <div id="testResult" style="margin-top:8px;font-size:13px"></div>
+</div>
+
+<div class="section">
+  <h2>辅助功能权限</h2>
+  <div id="permStatus" class="status off"><span class="dot off"></span>检测中…</div>
+  <div class="perm-box" id="permBox">
+    自动输入文字（在微信/备忘录等应用里打字）需要授权终端「辅助功能」权限。授权后龙虾脑可以自动输入，无需手动粘贴。
+  </div>
+  <div class="btn-row">
+    <button class="btn btn-ghost" onclick="checkPerm()">重新检测</button>
+    <button class="btn btn-ghost" onclick="openPerm()">打开系统设置</button>
+  </div>
+</div>
+
+<div class="section">
+  <h2>当前能力</h2>
+  <div style="font-size:13px;color:#666;line-height:1.8">
+    • 搜索（百度/Google/知乎） • 播放（B站/优酷/爱奇艺） • 打开应用/文件夹/网站<br>
+    • 查评分（豆瓣） • 系统操作（截图/音量/锁屏） • 记备忘录<br>
+    • 在应用里输入文字（需辅助功能权限） • 复合指令（打开微信——输入你好）
+  </div>
+</div>
+
+<script>
+function esc(s){return (s||'').replace(/</g,'&lt;')}
+async function load(){
+  // 加载预设
+  var r=await fetch('/api/llm-config');var d=await r.json();
+  var sel=document.getElementById('preset');
+  (d.presets||[]).forEach(function(p){
+    var o=document.createElement('option');o.value=p.id;o.textContent=p.name;
+    if(p.baseUrl===d.baseUrl)o.selected=true;sel.appendChild(o);
+  });
+  document.getElementById('baseUrl').value=d.baseUrl||'';
+  document.getElementById('model').value=d.model||'';
+  if(d.hasKey){document.getElementById('apiKey').placeholder='已配置（输入新值覆盖）'}
+  updateStatus(d.enabled);
+  checkPerm();
+}
+function onPreset(){
+  var sel=document.getElementById('preset');
+  var r=(window.__presets||[]).find(function(p){return p.id===sel.value});
+  if(r&&r.baseUrl){document.getElementById('baseUrl').value=r.baseUrl;document.getElementById('model').value=r.model}
+}
+function updateStatus(on){
+  var tag=document.getElementById('llmTag'),st=document.getElementById('llmStatus');
+  if(on){tag.className='tag llm';tag.textContent='大模型';st.className='status on';st.innerHTML='<span class="dot on"></span>已启用大模型解析，指令理解更智能'}
+  else{tag.className='tag rule';tag.textContent='规则引擎';st.className='status off';st.innerHTML='<span class="dot off"></span>未配置，使用本地规则引擎'}
+}
+async function save(){
+  var d={baseUrl:document.getElementById('baseUrl').value.trim(),apiKey:document.getElementById('apiKey').value.trim(),model:document.getElementById('model').value.trim()};
+  if(!d.baseUrl){alert('请填写 API Base URL');return}
+  if(!d.apiKey && !document.getElementById('apiKey').placeholder.startsWith('已配置')){alert('请填写 API Key');return}
+  // 如果 apiKey 为空且 placeholder 显示已配置，保留旧 key
+  if(!d.apiKey){
+    // 不覆盖，只更新 baseUrl 和 model
+    var old=await (await fetch('/api/llm-config')).json();
+    d.apiKey='__KEEP__'; // 标记保留
+  }
+  var r=await fetch('/api/llm-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  var res=await r.json();
+  updateStatus(res.enabled);
+  alert(res.ok?'保存成功！':'保存失败');
+  load();
+}
+async function testConn(){
+  var tr=document.getElementById('testResult');tr.textContent='测试中…';tr.style.color='#999';
+  var d={baseUrl:document.getElementById('baseUrl').value.trim(),apiKey:document.getElementById('apiKey').value.trim()||undefined,model:document.getElementById('model').value.trim()};
+  if(!d.baseUrl||!d.apiKey){tr.textContent='请先填写 Base URL 和 API Key';tr.style.color='#C00';return}
+  var r=await fetch('/api/llm-config/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  var res=await r.json();
+  if(res.ok){tr.innerHTML='✅ 连接成功！模型回复：'+esc(res.reply||'(空)');tr.style.color='#333'}
+  else{tr.innerHTML='❌ 连接失败：'+esc(res.error||'未知错误');tr.style.color='#C00'}
+}
+async function checkPerm(){
+  var st=document.getElementById('permStatus'),box=document.getElementById('permBox');
+  var r=await fetch('/api/accessibility');var d=await r.json();
+  if(d.granted){st.className='status on';st.innerHTML='<span class="dot on"></span>已授权，自动输入可用';box.className='perm-box';box.textContent='辅助功能已授权。龙虾脑可以在应用里自动输入文字了。'}
+  else{st.className='status off';st.innerHTML='<span class="dot off"></span>未授权，自动输入不可用';box.className='perm-box warn';box.innerHTML='需要在「系统设置 → 隐私与安全 → 辅助功能」中添加并开启终端（node）。<br>路径参考：'+esc('终端 / VS Code / WorkBuddy（取决于你启动服务的程序）')+'<br>点下方「打开系统设置」后在列表中找到对应程序并开启。'}
+}
+function openPerm(){fetch('/api/accessibility',{method:'POST'}).then(function(){setTimeout(checkPerm,2000)})}
+load();
+</script></body></html>`;
+
 /* ---------------- HTTP ---------------- */
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
+  if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
   if (req.method === 'GET' && url.pathname === '/api/tasks') return res.end(JSON.stringify(tasks.slice().reverse()));
+  // LLM 配置
+  if (req.method === 'GET' && url.pathname === '/api/llm-config') {
+    const cfg = llmConfig();
+    return res.end(JSON.stringify({ baseUrl: cfg.baseUrl, model: cfg.model, enabled: cfg.enabled, hasKey: !!cfg.apiKey, presets: LLM_PRESETS }));
+  }
+  if (req.method === 'POST' && url.pathname === '/api/llm-config') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', () => {
+      try {
+        let { baseUrl, apiKey, model } = JSON.parse(body || '{}');
+        // __KEEP__ 表示保留旧 key
+        if (apiKey === '__KEEP__') {
+          const old = readLLMConfig() || {};
+          apiKey = old.apiKey || '';
+        }
+        writeLLMConfig({ baseUrl, apiKey, model });
+        const cfg = llmConfig();
+        res.end(JSON.stringify({ ok: true, enabled: cfg.enabled, hasKey: !!cfg.apiKey }));
+      } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad request' })); }
+    });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/llm-config/test') {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
+    req.on('end', async () => {
+      try {
+        const { baseUrl, apiKey, model } = JSON.parse(body || '{}');
+        const r = await fetch((baseUrl || '').replace(/\/$/, '') + '/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
+          body: JSON.stringify({ model: model || 'deepseek-chat', max_tokens: 20, messages: [{ role: 'user', content: '你好，回复OK' }] }),
+        });
+        const j = await r.json();
+        const reply = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+        res.end(JSON.stringify({ ok: true, reply }));
+      } catch (e) { res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
+    return;
+  }
+  // 辅助功能权限检测
+  if (req.method === 'GET' && url.pathname === '/api/accessibility') {
+    (async () => {
+      const ok = await checkAccessibility();
+      res.end(JSON.stringify({ granted: ok }));
+    })();
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/accessibility') {
+    (async () => {
+      await openAccessibilityPrefs();
+      res.end(JSON.stringify({ ok: true }));
+    })();
+    return;
+  }
   let m;
   if (req.method === 'GET' && (m = url.pathname.match(/^\/api\/task\/([\w-]+)$/))) {
     const t = pick(m[1]);
@@ -843,6 +1121,8 @@ server.listen(HTTP_PORT, '0.0.0.0', () => {
   } else {
     console.log('  ⚠ 未找到 cert/ 证书，语音输入不可用。运行 openssl 生成证书后重启。');
   }
-  console.log('  智能解析: ' + (process.env.LLM_API_KEY ? '大模型' : '增强规则引擎（可配 LLM_* 接真模型）'));
-  console.log('  能力: search / play / open(应用/文件夹/网站) / rating / system(音量/截图/锁屏…) / note');
+  const cfg = llmConfig();
+  console.log('  智能解析: ' + (cfg.enabled ? '大模型 (' + cfg.model + ')' : '增强规则引擎（未配置 LLM）'));
+  console.log('  能力: search / play / open(应用/文件夹/网站) / rating / system(音量/截图/锁屏…) / note / type(应用内输入)');
+  console.log('  配置页: http://localhost:' + HTTP_PORT + '/config  （接入 LLM + 辅助功能权限）');
 });
