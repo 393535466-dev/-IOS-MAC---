@@ -156,6 +156,14 @@ function detectApp(text) {
   for (const cn in APPS) if (lower.includes(cn.toLowerCase())) return { name: cn, key: APPS[cn] };
   return null;
 }
+// 把 LLM / 用户输入的中文或各种写法统一映射成系统能识别的应用名（如 微信→WeChat、备忘录→Notes）
+function resolveApp(name) {
+  if (!name) return name;
+  if (APPS[name]) return APPS[name];
+  const low = String(name).toLowerCase();
+  if (APPS[low]) return APPS[low];
+  return name;
+}
 function detectFolder(text) {
   for (const f in FOLDERS) if (text.includes(f)) return { name: f, path: FOLDERS[f] };
   return null;
@@ -459,7 +467,7 @@ async function runTask(t) {
         const appName = it.appName || it.app || '当前应用';
         // 1. 打开应用（如果有指定）
         if (it.app) {
-          await sh(`open -a "${it.app}"`);
+          await sh(`open -a "${resolveApp(it.app)}"`);
           await sleep(1800);
         } else {
           await sleep(300);
@@ -498,7 +506,7 @@ async function runTask(t) {
           }
         }
       } else if (it.action === 'open') {
-        if (it.sub === 'open_app') { await sh(`open -a "${it.app}"`); execNote = result = '已打开应用：' + it.target; }
+        if (it.sub === 'open_app') { await sh(`open -a "${resolveApp(it.app)}"`); execNote = result = '已打开应用：' + it.target; }
         else if (it.sub === 'open_folder') { await sh(`open ${it.folder}`); execNote = result = '已打开文件夹：' + it.target; }
         else if (it.sub === 'open_url') { await sh(`open "${it.url}"`); execNote = result = '已打开网址'; }
         else { await sh(`open "${SITES[it.platform].home}"`); execNote = result = '已打开 ' + SITES[it.platform].label + ' 首页'; }
@@ -613,6 +621,12 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .result-box.ok{background:var(--card);color:var(--fg);border:1px solid var(--line)}
 .result-box.err{background:var(--card);color:#666;border:1px solid var(--line)}
 .result-meta{font-size:11px;color:#BBB;margin-top:4px}
+.perm-alert{background:#F4F4F4;border:1.5px solid #555;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#222;margin-top:8px;line-height:1.55}
+.perm-alert .at{font-weight:700;color:#000}
+.perm-alert .row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.mini-btn{display:inline-block;padding:8px 13px;border-radius:18px;border:1px solid #555;background:#fff;color:#222;font-size:12px;font-family:inherit;cursor:pointer;text-decoration:none;transition:all .12s}
+.mini-btn:active{background:#555;color:#fff}
+.mini-btn.ghost{background:transparent}
 .task-time{font-size:11px;color:#CCC;margin-top:4px}
 .bottom-bar{flex-shrink:0;background:var(--bg);border-top:1px solid var(--line);padding:8px 14px calc(10px + env(safe-area-inset-bottom) + 52px)}
 .chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
@@ -777,7 +791,10 @@ async function poll(){
   var rb=document.getElementById('resultBox');
   if(t.status==='success'){
     var permHint='';
-    if(t.needPermission){permHint='<div class="result-meta" style="margin-top:8px"><a href="/config" target="_blank" style="color:#555;text-decoration:underline">→ 前往配置页授权辅助功能，授权后可自动输入</a></div>'}
+    if(t.needPermission){
+      var permProgTxt = _proc ? ('请授权运行本服务的程序：<b>'+esc(_proc)+'</b>。') : '请授权运行本服务的程序（终端 / VS Code / WorkBuddy 等）。';
+      permHint='<div class="perm-alert"><span class="at">⚠️ 自动输入需要「辅助功能」权限，当前未授权。</span><br>文字已暂存剪贴板，你也可先手动按 Cmd+V 粘贴。<br>'+permProgTxt+'<div class="row"><a href="/config" target="_blank" class="mini-btn">去配置页授权</a><button onclick="openMacSettings()" class="mini-btn ghost">在 Mac 上打开设置</button></div></div>'
+    }
     rb.innerHTML='<div class="result-box ok"><b>✅ 任务完成</b><br>'+esc(t.result)+'</div>'+permHint;
   }
   else{rb.innerHTML='<div class="result-box err"><b>❌ 任务失败</b><br>'+esc(t.error)+'</div><div class="result-meta">常见原因：权限未授权、应用未安装</div>'}
@@ -787,6 +804,9 @@ async function poll(){
 /* ---- 回车提交 ---- */
 document.getElementById('input').addEventListener('keydown',function(e){if(e.keyCode==13){e.preventDefault();submit()}});
 
+let _proc='';
+(async function(){try{var d=await (await fetch('/api/accessibility')).json();if(d.processName)_proc=d.processName;}catch(e){}})();
+async function openMacSettings(){try{await fetch('/api/accessibility',{method:'POST'});}catch(e){}}
 initVoice();
 </script></body></html>`;
 
@@ -882,7 +902,11 @@ h1{font-size:20px;font-weight:600;margin-bottom:4px}
 .tag.llm{background:#EEE;color:#555}
 .tag.rule{background:#F5F5F5;color:#999}
 .perm-box{font-size:12px;color:#666;padding:12px;border:1px solid #E8E5DF;border-radius:8px;margin-top:8px}
-.perm-box.warn{border-color:#DDD;background:#FAFAF8;color:#999}
+.perm-box.warn{border:1.5px solid #333;background:#FFF;border-left:4px solid #333;color:#222;font-size:13px;line-height:1.65}
+.perm-box.ok{border:1.5px solid #333;background:#FFF;color:#222}
+.perm-name{display:inline-block;background:#333;color:#FFF;padding:1px 8px;border-radius:4px;font-weight:600;font-size:12px}
+.perm-steps{margin:8px 0 0;padding-left:18px}
+.perm-steps li{margin:3px 0}
 </style></head><body>
 <a class="back" href="/">← 返回</a>
 <h1>龙虾脑配置</h1>
@@ -922,7 +946,16 @@ h1{font-size:20px;font-weight:600;margin-bottom:4px}
   <h2>辅助功能权限</h2>
   <div id="permStatus" class="status off"><span class="dot off"></span>检测中…</div>
   <div class="perm-box" id="permBox">
-    自动输入文字（在微信/备忘录等应用里打字）需要授权终端「辅助功能」权限。授权后龙虾脑可以自动输入，无需手动粘贴。
+    自动输入文字（在微信/备忘录等应用里打字）需要授权「辅助功能」权限。授权后龙虾脑可自动输入，无需手动粘贴。
+  </div>
+  <div id="permSteps" style="display:none;margin-top:10px;font-size:13px;color:#222;line-height:1.7">
+    <b>授权步骤：</b>
+    <ol class="perm-steps">
+      <li>点击下方「打开系统设置」按钮（或手动进入 <b>系统设置 → 隐私与安全性 → 辅助功能</b>）</li>
+      <li>在程序列表中找到并开启 <span class="perm-name" id="permName">运行本服务的程序</span></li>
+      <li><b>完全退出该程序再重新打开</b>（或重启服务），权限才会生效</li>
+      <li>回到这里点「重新检测」，显示「已授权」即成功</li>
+    </ol>
   </div>
   <div class="btn-row">
     <button class="btn btn-ghost" onclick="checkPerm()">重新检测</button>
@@ -991,10 +1024,17 @@ async function testConn(){
   else{tr.innerHTML='❌ 连接失败：'+esc(res.error||'未知错误');tr.style.color='#C00'}
 }
 async function checkPerm(){
-  var st=document.getElementById('permStatus'),box=document.getElementById('permBox');
+  var st=document.getElementById('permStatus'),box=document.getElementById('permBox'),steps=document.getElementById('permSteps');
   var r=await fetch('/api/accessibility');var d=await r.json();
-  if(d.granted){st.className='status on';st.innerHTML='<span class="dot on"></span>已授权，自动输入可用';box.className='perm-box';box.textContent='辅助功能已授权。龙虾脑可以在应用里自动输入文字了。'}
-  else{st.className='status off';st.innerHTML='<span class="dot off"></span>未授权，自动输入不可用';box.className='perm-box warn';box.innerHTML='需要在「系统设置 → 隐私与安全 → 辅助功能」中添加并开启终端（node）。<br>路径参考：'+esc('终端 / VS Code / WorkBuddy（取决于你启动服务的程序）')+'<br>点下方「打开系统设置」后在列表中找到对应程序并开启。'}
+  if(d.granted){st.className='status on';st.innerHTML='<span class="dot on"></span>已授权，自动输入可用';box.className='perm-box ok';box.textContent='辅助功能已授权。龙虾脑可以在应用里自动输入文字了。';steps.style.display='none';}
+  else{
+    st.className='status off';st.innerHTML='<span class="dot off"></span>未授权，自动输入不可用';
+    var prog = d.processName ? ('<span class="perm-name">'+esc(d.processName)+'</span>') : '运行本服务的程序（终端 / VS Code / WorkBuddy 等）';
+    box.className='perm-box warn';
+    box.innerHTML='当前<b>未授权</b>，自动输入会降级为「复制到剪贴板 + 手动粘贴」。请在辅助功能列表中开启：'+prog+'。';
+    document.getElementById('permName').innerHTML = d.processName ? esc(d.processName) : '运行本服务的程序';
+    steps.style.display='block';
+  }
 }
 function openPerm(){fetch('/api/accessibility',{method:'POST'}).then(function(){setTimeout(checkPerm,2000)})}
 load();
@@ -1053,7 +1093,13 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/api/accessibility') {
     (async () => {
       const ok = await checkAccessibility();
-      res.end(JSON.stringify({ granted: ok }));
+      let processName = '';
+      try {
+        const ppid = process.ppid;
+        processName = require('child_process').execSync(`ps -o comm= -p ${ppid}`).toString().trim() || '';
+        if (processName.includes('/')) processName = processName.split('/').pop().replace(/\.app$/, '');
+      } catch {}
+      res.end(JSON.stringify({ granted: ok, processName }));
     })();
     return;
   }
