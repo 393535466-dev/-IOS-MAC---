@@ -32,7 +32,7 @@ const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封�
 const APPS = {
   '微信': 'WeChat', 'wechat': 'WeChat', 'qq': 'QQ', 'QQ': 'QQ',
   'safari': 'Safari', '浏览器': 'Safari', 'chrome': 'Google Chrome', '谷歌浏览器': 'Google Chrome',
-  '邮件': 'Mail', '备忘录app': 'Notes', '计算器': 'Calculator',
+  '邮件': 'Mail', '备忘录': 'Notes', '计算器': 'Calculator',
   '访达': 'Finder', 'finder': 'Finder', '终端': 'Terminal', 'terminal': 'Terminal',
   'vscode': 'Visual Studio Code', '代码编辑器': 'Visual Studio Code', 'vs code': 'Visual Studio Code',
   '网易云音乐': 'NeteaseMusic', 'spotify': 'Spotify', '飞书': 'Feishu', '钉钉': 'DingTalk',
@@ -61,7 +61,7 @@ const SITES = {
 };
 const VIDEO_SITES = ['bilibili', 'youku', 'iqiyi', 'tencent', 'youtube'];
 const CONTENT_TYPES = { '预告片': ['预告片', '预告', 'trailer', 'teaser'], '正片': ['正片', '完整版', '全片'], '花絮': ['花絮', '幕后', '彩蛋'], '解说': ['解说', '影评', 'reaction'] };
-const ACTION_LABEL = { search: '搜索', play: '播放', open: '打开', rating: '查评分', system: '系统操作', note: '记备忘录' };
+const ACTION_LABEL = { search: '搜索', play: '播放', open: '打开', rating: '查评分', system: '系统操作', note: '记备忘录', type: '应用内输入' };
 
 /* ---------------- 数据层 ---------------- */
 let tasks = [];
@@ -157,7 +157,27 @@ function localParse(text) {
   const sys = detectSystem(raw);
   if (sys) return { action: 'system', sub: sys.sub, target: null, platform: null, contentType: null, raw, source: 'rule' };
 
-  // 2. 记备忘录
+  // 2. 在应用里输入/写/打文字（优先于备忘录，避免"在备忘录里写..."被备忘录截获）
+  {
+    let s2 = raw.replace(/^(帮我|请|麻烦|给我)\s*/, '');
+    // 模式A：在/用 [应用] 里/中 输入/写/发送 [文字]
+    let tm = s2.match(/(?:在|用)?(.+?)[里中](输入|打字|写|发送|打(?!开))(.+)/);
+    // 模式B：用 [应用] 发送/输入 [文字]（无"里/中"）
+    if (!tm) tm = s2.match(/用(.+?)(发送|输入)(.+)/);
+    if (tm) {
+      const appRaw = tm[1].trim();
+      const textToType = tm[3].trim().replace(/[。！？，\s]+$/g, '');
+      const app = detectApp(appRaw);
+      if (app && textToType) {
+        return { action: 'type', target: textToType, app: app.key, appName: app.name, platform: null, contentType: null, raw, source: 'rule' };
+      }
+      if (appRaw.length >= 1 && appRaw.length <= 10 && textToType) {
+        return { action: 'type', target: textToType, app: appRaw, appName: appRaw, platform: null, contentType: null, raw, source: 'rule' };
+      }
+    }
+  }
+
+  // 3. 记备忘录
   if (/备忘录|记一下|便签|记到|提醒我/.test(raw)) {
     let body = extractQuoted(raw) || raw.replace(/帮我|请|把|记到备忘录|记到备忘录里|记一下|记到|备忘录|便签|提醒我/g, '').trim();
     return { action: 'note', target: body, platform: null, contentType: null, raw, source: 'rule' };
@@ -242,6 +262,7 @@ function describeIntent(it) {
       return '系统操作：' + (map[it.sub] || it.sub);
     }
     case 'note': return '记到备忘录：「' + (it.target || '') + '」';
+    case 'type': return '在「' + (it.appName || it.app || '') + '」里输入：「' + (it.target || '') + '」';
     case 'open':
       if (it.sub === 'open_app') return '打开应用 ' + (it.target || '');
       if (it.sub === 'open_folder') return '打开' + (it.target || '') + '文件夹';
@@ -313,6 +334,7 @@ function planText(it) {
   switch (it.action) {
     case 'system': return { volume_up: 'osascript 调高系统音量 +10', volume_down: 'osascript 调低系统音量 -10', mute: 'osascript 静音', brightness: '打开「显示设置」', screenshot: 'screencapture 截图保存到桌面', lock: '调用 CGSession 锁屏', trash: '高危操作，提示用户手动确认', settings: '打开系统设置' }[it.sub];
     case 'note': return '把内容写入剪贴板 → 打开备忘录 → 提示粘贴';
+    case 'type': return `open -a "${it.app}" → 等待 1.5s → pbcopy 写入剪贴板 → osascript 模拟 Cmd+V 粘贴`;
     case 'open':
       if (it.sub === 'open_app') return `open -a "${it.app}"`;
       if (it.sub === 'open_folder') return `open ${it.folder}`;
@@ -361,6 +383,22 @@ async function runTask(t) {
         await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
         await sh(`open -a "Notes"`);
         execNote = result = '内容已复制到剪贴板，备忘录已打开，按 Cmd+V 粘贴';
+      } else if (it.action === 'type') {
+        // 1. 写入剪贴板
+        const tmp = path.join(os.tmpdir(), 'lb_type_' + Date.now() + '.txt');
+        fs.writeFileSync(tmp, String(it.target || ''), 'utf8');
+        await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
+        // 2. 打开应用
+        await sh(`open -a "${it.app}"`);
+        // 3. 等待应用切换到前台
+        await sleep(1500);
+        // 4. 模拟 Cmd+V 粘贴（需要辅助功能权限）
+        try {
+          await sh(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
+          execNote = result = '已在「' + (it.appName || it.app) + '」中粘贴输入：「' + it.target + '」';
+        } catch (e) {
+          execNote = result = '内容已复制到剪贴板，「' + (it.appName || it.app) + '」已打开。请手动按 Cmd+V 粘贴（需在「系统设置 → 隐私与安全 → 辅助功能」中授权终端）';
+        }
       } else if (it.action === 'open') {
         if (it.sub === 'open_app') { await sh(`open -a "${it.app}"`); execNote = result = '已打开应用：' + it.target; }
         else if (it.sub === 'open_folder') { await sh(`open ${it.folder}`); execNote = result = '已打开文件夹：' + it.target; }
@@ -465,7 +503,7 @@ const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-
   <div class="s" onclick="use('百度一下 Python 异步编程')"><div class="t">搜任意问题</div><div class="d">百度/Google/知乎</div></div>
   <div class="s" onclick="use('打开微信')"><div class="t">打开应用</div><div class="d">微信/终端/访达…</div></div>
   <div class="s" onclick="use('截个屏')"><div class="t">系统操作</div><div class="d">截图/音量/锁屏</div></div>
-  <div class="s" onclick="use('把明天开会带电脑记到备忘录')"><div class="t">记备忘录</div><div class="d">说话即记录</div></div>
+  <div class="s" onclick="use('在微信里输入你好')"><div class="t">应用内输入</div><div class="d">在微信/备忘录里打字</div></div>
   <div class="s" onclick="use('帮我查一下奥本海默的评分')"><div class="t">查评分</div><div class="d">豆瓣评分</div></div>
 </div>
 
@@ -496,6 +534,7 @@ try{hist=JSON.parse(localStorage.getItem('lb_hist')||'[]')}catch(e){}
 var SUGGEST=[
  '搜索《流浪地球》预告片并播放','在B站搜沙丘2的花絮','帮我查一下奥本海默的评分',
  '百度一下 Python 异步编程','打开微信','打开下载文件夹','截个屏','音量调大一点',
+ '在微信里输入你好','在终端里输入ls -la','在备忘录里写明天的工作计划',
  '把明天开会带电脑记到备忘录','锁屏','打开知乎','在GitHub搜 workbuddy','打开爱奇艺'
 ];
 var rec=null;
@@ -632,7 +671,7 @@ h2{font-size:15px;font-weight:500;margin:22px 0 10px}
 </div>
 <script>
 function esc(s){return (s||'').replace(/</g,'&lt;')}
-var AL={search:'搜索',play:'播放',open:'打开',rating:'查评分',system:'系统操作',note:'记备忘录'};
+var AL={search:'搜索',play:'播放',open:'打开',rating:'查评分',system:'系统操作',note:'记备忘录',type:'应用内输入'};
 var PL={baidu:'百度',google:'Google',bilibili:'B站',youku:'优酷',iqiyi:'爱奇艺',tencent:'腾讯视频',youtube:'YouTube',douban:'豆瓣',zhihu:'知乎',weibo:'微博',github:'GitHub',taobao:'淘宝',jd:'京东'};
 async function refresh(){
   var list=(await (await fetch('/api/tasks')).json());
