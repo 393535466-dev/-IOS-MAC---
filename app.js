@@ -24,6 +24,7 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 const { execSync } = require('child_process');
+const crypto = require('crypto');
 // ---- 鼠标控制（手机触控板 → 远程控制 Mac 光标）----
 const MOUSECTL = path.join(__dirname, 'bin', 'mousectl.py');
 const MOUSE_SENS = 2.5; // 触控板灵敏度：手指滑动 1px → Mac 光标移动 2.5px
@@ -101,6 +102,34 @@ function readLLMConfig() {
 function writeLLMConfig(cfg) {
   fs.writeFileSync(LLM_CFG_FILE, JSON.stringify(cfg, null, 2), 'utf8');
 }
+/* ---------------- 访问控制：局域网令牌（防止同 Wi-Fi 他人操控本机） ---------------- */
+const AUTH_FILE = path.join(__dirname, 'auth.json');
+let AUTH_TOKEN = '';
+function loadAuth() {
+  try {
+    const j = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
+    if (j && j.token) { AUTH_TOKEN = j.token; return; }
+  } catch (e) {}
+  // 首次运行：生成随机令牌并持久化
+  AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
+  try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+}
+function isLocalhost(req) {
+  const a = (req.socket && req.socket.remoteAddress) || '';
+  return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' || a === 'localhost';
+}
+function checkAuth(url, req) {
+  if (isLocalhost(req)) return true; // 本机即本人，免令牌
+  const t = url.searchParams.get('t') || (req.headers && req.headers['x-lb-token']) || '';
+  return !!t && t === AUTH_TOKEN;
+}
+function lanIP() {
+  const ifaces = os.networkInterfaces();
+  for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) return i.address;
+  return 'localhost';
+}
+const HTTPS_PORT_OF = () => Number(PORT) + 1;
+
 function llmConfig() {
   const cfg = readLLMConfig() || {};
   return {
@@ -735,6 +764,12 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
   </div>
 </div>
 
+<div id="lock" style="display:none;position:fixed;inset:0;background:rgba(255,255,255,.97);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <div style="font-size:16px;font-weight:600;margin-bottom:6px">需要访问令牌</div>
+  <div style="font-size:13px;color:#888;margin-bottom:18px;text-align:center;line-height:1.6">龙虾脑已开启局域网保护。<br>请在 Mac 本机「配置」页复制手机链接，或输入令牌。</div>
+  <input id="lockPwd" type="password" placeholder="访问令牌" style="width:100%;max-width:300px;border:1px solid #DDD;border-radius:10px;padding:12px;font-size:15px;outline:none;text-align:center" onkeydown="if(event.key==='Enter')doUnlock()">
+  <button onclick="doUnlock()" style="margin-top:12px;width:100%;max-width:300px;padding:12px;border:none;border-radius:10px;background:#1A1A1A;color:#fff;font-size:15px;cursor:pointer">解锁</button>
+</div>
 <div class="bottom-bar">
   <div class="chips">
     <button class="chip" onclick="quickSend('打开微信')">打开微信</button>
@@ -753,6 +788,12 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 </div>
 
 <script>
+var LB_TOKEN = new URLSearchParams(location.search).get('t') || (function(){try{return localStorage.getItem('lb_token');}catch(e){return'';}})() || '';
+if (LB_TOKEN) { try { localStorage.setItem('lb_token', LB_TOKEN); } catch(e){} }
+['cfg-fab','dash-fab'].forEach(function(id){var a=document.getElementById(id);if(a&&LB_TOKEN){var h=a.getAttribute('href').split('?')[0];a.href=h+'?t='+encodeURIComponent(LB_TOKEN);}});
+function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'application/json'}, o.headers||{}); if(LB_TOKEN) o.headers['x-lb-token']=LB_TOKEN; return fetch(p,o).then(function(r){ if(r.status===401) showLock(); return r; }); }
+function showLock(){ var el=document.getElementById('lock'); if(el) el.style.display='flex'; }
+function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 var cur=null,timer=null;
 var rec=null,recognizing=false,voiceReady=false;
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
@@ -789,7 +830,7 @@ function initVoice(){
         if(final){
           var raw=final.trim();
           label.innerHTML='正在翻译…';
-          fetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
+          lbFetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
             .then(function(r){return r.json()})
             .then(function(d){
               document.getElementById('input').value=d.normalized;
@@ -843,7 +884,7 @@ async function submit(){
   document.getElementById('input').value='';
   document.getElementById('send').style.opacity='.5';
   try{
-    var r=await fetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:v})});
+    var r=await lbFetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:v})});
     cur=(await r.json()).id;
     var sa=document.getElementById('statusArea');
     sa.innerHTML='<div class="task-card"><div class="echo">「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
@@ -857,7 +898,7 @@ async function submit(){
 /* ---- 轮询任务状态 ---- */
 async function poll(){
   if(!cur)return;
-  var r=await fetch('/api/task/'+cur);if(!r.ok)return;var t=await r.json();
+  var r=await lbFetch('/api/task/'+cur);if(!r.ok)return;var t=await r.json();
   var u=document.getElementById('understand');
   if(t.intent&&t.intent._desc&&t.stages[0].state==='done'){
     u.innerHTML='<div class="understand"><b>我理解：</b>'+esc(t.intent._desc)+'</div>';
@@ -886,8 +927,8 @@ async function poll(){
 document.getElementById('input').addEventListener('keydown',function(e){if(e.keyCode==13){e.preventDefault();submit()}});
 
 let _proc='';
-(async function(){try{var d=await (await fetch('/api/accessibility')).json();if(d.processName)_proc=d.processName;}catch(e){}})();
-async function openMacSettings(){try{await fetch('/api/accessibility',{method:'POST'});}catch(e){}}
+(async function(){try{var d=await (await lbFetch('/api/accessibility')).json();if(d.processName)_proc=d.processName;}catch(e){}})();
+async function openMacSettings(){try{await lbFetch('/api/accessibility',{method:'POST'});}catch(e){}}
 initVoice();
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
@@ -898,11 +939,11 @@ initVoice();
   function flush(){
     if(pendX===0&&pendY===0) return;
     var dx=pendX,dy=pendY; pendX=0; pendY=0;
-    fetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dx:dx,dy:dy})});
+    lbFetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dx:dx,dy:dy})});
   }
   pad.addEventListener('touchstart',function(e){e.preventDefault();var t=e.touches[0];lastX=t.clientX;lastY=t.clientY;moved=false;},{passive:false});
   pad.addEventListener('touchmove',function(e){e.preventDefault();var t=e.touches[0];var dx=t.clientX-lastX,dy=t.clientY-lastY;lastX=t.clientX;lastY=t.clientY;if(Math.abs(dx)>2||Math.abs(dy)>2)moved=true;pendX+=dx;pendY+=dy;if(!timer)timer=setInterval(flush,30);},{passive:false});
-  pad.addEventListener('touchend',function(e){e.preventDefault();if(timer){clearInterval(timer);timer=null;}flush();if(!moved){fetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tap:true})});}});
+  pad.addEventListener('touchend',function(e){e.preventDefault();if(timer){clearInterval(timer);timer=null;}flush();if(!moved){lbFetch('/api/mouse',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tap:true})});}});
 })();
 </script></body></html>`;
 
@@ -929,10 +970,14 @@ h2{font-size:15px;font-weight:500;margin:22px 0 10px}
 </div>
 <script>
 function esc(s){return (s||'').replace(/</g,'&lt;')}
+var LB_TOKEN = new URLSearchParams(location.search).get('t') || (function(){try{return localStorage.getItem('lb_token');}catch(e){return'';}})() || '';
+function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'application/json'}, o.headers||{}); if(LB_TOKEN) o.headers['x-lb-token']=LB_TOKEN; return fetch(p,o).then(function(r){ if(r.status===401) showLock(); return r; }); }
+function showLock(){ var el=document.getElementById('lock'); if(el) el.style.display='flex'; }
+function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 var AL={search:'搜索',play:'播放',open:'打开',rating:'查评分',system:'系统操作',note:'记备忘录',type:'应用内输入'};
 var PL={baidu:'百度',google:'Google',bilibili:'B站',youku:'优酷',iqiyi:'爱奇艺',tencent:'腾讯视频',youtube:'YouTube',douban:'豆瓣',zhihu:'知乎',weibo:'微博',github:'GitHub',taobao:'淘宝',jd:'京东'};
 async function refresh(){
-  var list=(await (await fetch('/api/tasks')).json());
+  var list=(await (await lbFetch('/api/tasks')).json());
   var ok=list.filter(function(t){return t.status==='success'}).length;
   var fin=list.filter(function(t){return t.status!=='processing'});
   var avg=fin.length?(fin.reduce(function(a,t){return a+(t.finishedAt-t.createdAt)},0)/fin.length/1000).toFixed(1):'-';
@@ -1060,6 +1105,30 @@ h1{font-size:20px;font-weight:600;margin-bottom:4px}
 </div>
 
 <div class="section">
+  <h2>局域网访问保护（令牌）</h2>
+  <div id="tokenStatus" class="status off"><span class="dot off"></span>读取中…</div>
+  <div id="tokenBox" style="display:none">
+    <div style="font-size:13px;color:#555;margin-bottom:8px">手机/其他设备访问需携带此令牌。在本机复制下方「手机链接」加到主屏幕即可（令牌已内置）。</div>
+    <div class="field">
+      <label>访问令牌</label>
+      <input id="tokenVal" readonly style="font-family:monospace;letter-spacing:.5px">
+    </div>
+    <div class="field">
+      <label>手机链接（含令牌，直接加到主屏幕）</label>
+      <input id="phoneLink" readonly style="font-size:12px">
+      <div class="hint">仅本机(localhost)可读取令牌；从局域网打开本页看不到令牌。</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost" onclick="copyPhone()">复制手机链接</button>
+      <button class="btn btn-ghost" onclick="resetToken()">重置令牌</button>
+    </div>
+  </div>
+  <div id="tokenWarn" style="display:none;font-size:12px;color:#999;line-height:1.6">
+    当前从局域网打开配置页，出于安全无法显示令牌。请在 <b>Mac 本机</b>用 <b>http://localhost:8787/config</b> 打开以查看令牌与手机链接。
+  </div>
+</div>
+
+<div class="section">
   <h2>当前能力</h2>
   <div style="font-size:13px;color:#666;line-height:1.8">
     • 搜索（百度/Google/知乎） • 播放（B站/优酷/爱奇艺） • 打开应用/文件夹/网站<br>
@@ -1069,10 +1138,14 @@ h1{font-size:20px;font-weight:600;margin-bottom:4px}
 </div>
 
 <script>
+var LB_TOKEN = new URLSearchParams(location.search).get('t') || (function(){try{return localStorage.getItem('lb_token');}catch(e){return'';}})() || '';
+function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'application/json'}, o.headers||{}); if(LB_TOKEN) o.headers['x-lb-token']=LB_TOKEN; return fetch(p,o).then(function(r){ if(r.status===401) showLock(); return r; }); }
+function showLock(){ var el=document.getElementById('lock'); if(el) el.style.display='flex'; }
+function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 function esc(s){return (s||'').replace(/</g,'&lt;')}
 async function load(){
   // 加载预设
-  var r=await fetch('/api/llm-config');var d=await r.json();
+  var r=await lbFetch('/api/llm-config');var d=await r.json();
   var sel=document.getElementById('preset');
   (d.presets||[]).forEach(function(p){
     var o=document.createElement('option');o.value=p.id;o.textContent=p.name;
@@ -1101,10 +1174,10 @@ async function save(){
   // 如果 apiKey 为空且 placeholder 显示已配置，保留旧 key
   if(!d.apiKey){
     // 不覆盖，只更新 baseUrl 和 model
-    var old=await (await fetch('/api/llm-config')).json();
+    var old=await (await lbFetch('/api/llm-config')).json();
     d.apiKey='__KEEP__'; // 标记保留
   }
-  var r=await fetch('/api/llm-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  var r=await lbFetch('/api/llm-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
   var res=await r.json();
   updateStatus(res.enabled);
   alert(res.ok?'保存成功！':'保存失败');
@@ -1114,14 +1187,14 @@ async function testConn(){
   var tr=document.getElementById('testResult');tr.textContent='测试中…';tr.style.color='#999';
   var d={baseUrl:document.getElementById('baseUrl').value.trim(),apiKey:document.getElementById('apiKey').value.trim()||undefined,model:document.getElementById('model').value.trim()};
   if(!d.baseUrl||!d.apiKey){tr.textContent='请先填写 Base URL 和 API Key';tr.style.color='#C00';return}
-  var r=await fetch('/api/llm-config/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
+  var r=await lbFetch('/api/llm-config/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});
   var res=await r.json();
   if(res.ok){tr.innerHTML='✅ 连接成功！模型回复：'+esc(res.reply||'(空)');tr.style.color='#333'}
   else{tr.innerHTML='❌ 连接失败：'+esc(res.error||'未知错误');tr.style.color='#C00'}
 }
 async function checkPerm(){
   var st=document.getElementById('permStatus'),box=document.getElementById('permBox'),steps=document.getElementById('permSteps');
-  var r=await fetch('/api/accessibility');var d=await r.json();
+  var r=await lbFetch('/api/accessibility');var d=await r.json();
   if(d.granted){st.className='status on';st.innerHTML='<span class="dot on"></span>已授权，自动输入可用';box.className='perm-box ok';box.textContent='辅助功能已授权。龙虾脑可以在应用里自动输入文字了。';steps.style.display='none';}
   else{
     st.className='status off';st.innerHTML='<span class="dot off"></span>未授权，自动输入不可用';
@@ -1132,14 +1205,46 @@ async function checkPerm(){
     steps.style.display='block';
   }
 }
-function openPerm(){fetch('/api/accessibility',{method:'POST'}).then(function(){setTimeout(checkPerm,2000)})}
+function openPerm(){lbFetch('/api/accessibility',{method:'POST'}).then(function(){setTimeout(checkPerm,2000)})}
+async function loadToken(){
+  try{
+    var r=await lbFetch('/api/auth/info');
+    if(r.status===200){var d=await r.json();document.getElementById('tokenStatus').className='status on';document.getElementById('tokenStatus').innerHTML='<span class="dot on"></span>已开启保护（本机可读令牌）';
+      document.getElementById('tokenBox').style.display='block';
+      document.getElementById('tokenVal').value=d.token;document.getElementById('phoneLink').value=d.phoneLink;
+    } else if(r.status===403){
+      document.getElementById('tokenStatus').className='status off';document.getElementById('tokenStatus').innerHTML='<span class="dot off"></span>本机外打开：无法显示令牌';
+      document.getElementById('tokenWarn').style.display='block';
+    } else { document.getElementById('tokenStatus').innerHTML='状态：'+r.status; }
+  }catch(e){ document.getElementById('tokenStatus').innerHTML='读取失败：'+e.message; }
+}
+function copyPhone(){var v=document.getElementById('phoneLink').value;if(navigator.clipboard)navigator.clipboard.writeText(v);else{document.getElementById('phoneLink').select();document.execCommand('copy');}}
+async function resetToken(){ if(!confirm('重置后，所有手机需重新用新链接连接。确定重置？'))return; var r=await lbFetch('/api/auth/reset',{method:'POST'});var d=await r.json();if(d.ok){document.getElementById('tokenVal').value=d.token;document.getElementById('phoneLink').value=d.phoneLink;alert('已重置。请重新复制手机链接并加到主屏幕。');}}
 load();
+loadToken();
 </script></body></html>`;
 
 /* ---------------- HTTP ---------------- */
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  // ===== 访问控制：所有 /api/ 接口（非本机）必须携带有效令牌 =====
+  if (url.pathname.startsWith('/api/')) {
+    if (url.pathname === '/api/auth/info') {
+      if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+      return res.end(JSON.stringify({ token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
+    }
+    if (url.pathname === '/api/auth/reset' && req.method === 'POST') {
+      if (!isLocalhost(req) && !checkAuth(url, req)) { res.statusCode = 401; return res.end(JSON.stringify({ error: 'unauthorized' })); }
+      AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
+      try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+      return res.end(JSON.stringify({ ok: true, token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
+    }
+    if (!checkAuth(url, req)) {
+      res.statusCode = 401;
+      return res.end(JSON.stringify({ error: 'unauthorized', code: 401, hint: '请在 Mac 本机打开配置页获取手机链接，或在请求中携带令牌 ?t= 或头 x-lb-token' }));
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
@@ -1264,6 +1369,7 @@ const server = http.createServer((req, res) => {
 });
 
 load();
+loadAuth();
 const HTTP_PORT = PORT;
 const HTTPS_PORT = Number(PORT) + 1;
 server.listen(HTTP_PORT, '0.0.0.0', () => {
