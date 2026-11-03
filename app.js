@@ -36,6 +36,7 @@ const APPS = {
   '访达': 'Finder', 'finder': 'Finder', '终端': 'Terminal', 'terminal': 'Terminal',
   'vscode': 'Visual Studio Code', '代码编辑器': 'Visual Studio Code', 'vs code': 'Visual Studio Code',
   '网易云音乐': 'NeteaseMusic', 'spotify': 'Spotify', '飞书': 'Feishu', '钉钉': 'DingTalk',
+  '豆包': 'DoubaoWork', 'doubao': 'DoubaoWork', 'workbuddy': 'WorkBuddy', 'WorkBuddy': 'WorkBuddy',
   '企业微信': 'WeCom', '日历': 'Calendar', '提醒事项': 'Reminders', '地图': 'Maps',
   '预览': 'Preview', '文本编辑': 'TextEdit', '截图': 'Screenshot', 'quicktime': 'QuickTime Player',
 };
@@ -467,8 +468,13 @@ async function runTask(t) {
         const appName = it.appName || it.app || '当前应用';
         // 1. 打开应用（如果有指定）
         if (it.app) {
-          await sh(`open -a "${resolveApp(it.app)}"`);
-          await sleep(1800);
+          const realName = resolveApp(it.app);
+          await sh(`open -a "${realName}"`);
+          // 留足启动时间（Electron/聊天类应用冷启动较慢）
+          await sleep(2000);
+          // 强制激活到前台，确保焦点落在应用窗口（输入框）上
+          try { await sh(`osascript -e 'tell application "${realName}" to activate'`); } catch (e) {}
+          await sleep(400);
         } else {
           await sleep(300);
         }
