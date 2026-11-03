@@ -153,6 +153,27 @@ function localParse(text) {
   const raw = (text || '').trim();
   const lower = raw.toLowerCase();
 
+  // 0. 复合指令：打开XX——输入YY / 打开XX然后输入YY / 打开XX，输入YY
+  {
+    const parts = raw.split(/——|—|--|然后|之后|接着|，再|,再/).map(s => s.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      const openPart = parts.find(p => /打开|启动|唤起/.test(p));
+      const inputPart = parts.find(p => /^(输入|写|发送|打)/.test(p) && p !== openPart);
+      if (openPart && inputPart) {
+        const am = openPart.match(/(?:打开|启动|唤起)(.+)/);
+        const tm = inputPart.match(/(?:输入|写|发送|打)(.*)/);
+        if (am && tm) {
+          const appName = am[1].trim();
+          const textToType = tm[1].trim().replace(/[。！？，\s]+$/g, '');
+          const app = detectApp(appName);
+          if (app && textToType) {
+            return { action: 'type', target: textToType, app: app.key, appName: app.name, platform: null, contentType: null, raw, source: 'rule' };
+          }
+        }
+      }
+    }
+  }
+
   // 1. 系统操作
   const sys = detectSystem(raw);
   if (sys) return { action: 'system', sub: sys.sub, target: null, platform: null, contentType: null, raw, source: 'rule' };
@@ -173,6 +194,16 @@ function localParse(text) {
       }
       if (appRaw.length >= 1 && appRaw.length <= 10 && textToType) {
         return { action: 'type', target: textToType, app: appRaw, appName: appRaw, platform: null, contentType: null, raw, source: 'rule' };
+      }
+    }
+    // 模式C：单独"输入/写[文字]"（无应用上下文→输入到当前前台应用）
+    {
+      let sm = s2.match(/^(输入|写)(.+)/);
+      if (sm && !/搜索|搜|百度|google/.test(s2)) {
+        const textToType = sm[2].trim().replace(/[。！？，\s]+$/g, '');
+        if (textToType && textToType.length >= 1) {
+          return { action: 'type', target: textToType, app: null, appName: '当前应用', platform: null, contentType: null, raw, source: 'rule' };
+        }
       }
     }
   }
@@ -388,16 +419,19 @@ async function runTask(t) {
         const tmp = path.join(os.tmpdir(), 'lb_type_' + Date.now() + '.txt');
         fs.writeFileSync(tmp, String(it.target || ''), 'utf8');
         await sh(`pbcopy < "${tmp}"`); fs.unlinkSync(tmp);
-        // 2. 打开应用
-        await sh(`open -a "${it.app}"`);
-        // 3. 等待应用切换到前台
-        await sleep(1500);
-        // 4. 模拟 Cmd+V 粘贴（需要辅助功能权限）
+        // 2. 打开应用（如果有指定）
+        if (it.app) {
+          await sh(`open -a "${it.app}"`);
+          await sleep(1500);
+        } else {
+          await sleep(300);
+        }
+        // 3. 模拟 Cmd+V 粘贴（需要辅助功能权限）
         try {
           await sh(`osascript -e 'tell application "System Events" to keystroke "v" using command down'`);
-          execNote = result = '已在「' + (it.appName || it.app) + '」中粘贴输入：「' + it.target + '」';
+          execNote = result = '已在「' + (it.appName || it.app || '当前应用') + '」中粘贴输入：「' + it.target + '」';
         } catch (e) {
-          execNote = result = '内容已复制到剪贴板，「' + (it.appName || it.app) + '」已打开。请手动按 Cmd+V 粘贴（需在「系统设置 → 隐私与安全 → 辅助功能」中授权终端）';
+          execNote = result = '内容已复制到剪贴板' + (it.app ? '，「' + (it.appName || it.app) + '」已打开' : '') + '。请手动按 Cmd+V 粘贴（需在「系统设置 → 隐私与安全 → 辅助功能」中授权终端）';
         }
       } else if (it.action === 'open') {
         if (it.sub === 'open_app') { await sh(`open -a "${it.app}"`); execNote = result = '已打开应用：' + it.target; }
@@ -483,66 +517,53 @@ textarea:focus{border-color:#D85A30}
 /* ---------------- 手机任务页 ---------------- */
 const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>龙虾脑 · 一句话指挥你的 Mac</title><style>
+<title>龙虾脑</title><style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:#fff;color:#1A1A1A;line-height:1.6;height:100vh;display:flex;flex-direction:column;overflow:hidden}
-/* 顶部品牌栏 */
-.header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px 10px;background:#fff;border-bottom:1px solid #F0EFEC;flex-shrink:0}
-.brand{display:flex;align-items:center;gap:8px}
-.brand .dot{width:28px;height:28px;border-radius:8px;background:#D85A30;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:14px}
-.brand .name{font-size:15px;font-weight:600;color:#1A1A1A}
-.brand .sub{font-size:10px;color:#B0AFAA;margin-left:2px}
-.dash-link{font-size:12px;color:#D85A30;text-decoration:none;padding:4px 10px;border:1px solid #F0CFC0;border-radius:14px}
-/* 主内容区（可滚动） */
-.main{flex:1;overflow-y:auto;padding:0 18px;display:flex;flex-direction:column}
-/* 语音按钮区 */
-.voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 0 20px}
-.mic-btn{width:88px;height:88px;border-radius:50%;border:none;background:linear-gradient(135deg,#D85A30,#E87340);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 6px 20px rgba(216,90,48,.3);transition:transform .15s,box-shadow .15s;position:relative}
-.mic-btn svg{width:34px;height:34px;fill:#fff}
-.mic-btn.recording{background:linear-gradient(135deg,#A32D2D,#D85A30);transform:scale(1.08);box-shadow:0 6px 30px rgba(163,45,45,.4)}
-.mic-btn.recording::before{content:'';position:absolute;inset:-12px;border-radius:50%;border:2px solid rgba(216,90,48,.3);animation:ripple 1.2s infinite}
-.mic-btn.disabled{background:#E5E2DA;box-shadow:none;cursor:default;opacity:.6}
-@keyframes ripple{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.5);opacity:0}}
-.mic-label{margin-top:14px;font-size:13px;color:#888780;text-align:center;min-height:20px}
-.mic-label.recording{color:#D85A30;font-weight:500}
-.mic-hint{margin-top:4px;font-size:11px;color:#B0AFAA;text-align:center;max-width:260px}
-.mic-hint a{color:#D85A30;text-decoration:underline;cursor:pointer}
-/* 任务状态区 */
-.status-area{margin-top:8px}
-.task-card{background:#FAFAF8;border-radius:14px;padding:14px 16px;margin-bottom:10px}
-.task-card .echo{font-size:14px;font-weight:500;color:#1A1A1A;margin-bottom:8px}
-.understand{background:#F0EDE6;border-radius:10px;padding:10px 12px;font-size:12px;color:#5C5A52;margin:8px 0}
-.understand b{font-weight:600;color:#3C3A32}
-.stage-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0}
-.stage-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;margin-top:2px;background:#E5E2DA;transition:background .3s}
-.stage-dot.done{background:#0F6E56}.stage-dot.running{background:#D85A30;animation:pulse 1s infinite}.stage-dot.failed{background:#A32D2D}
+:root{--bg:#fff;--fg:#1A1A1A;--muted:#888;--line:#E5E5E5;--card:#F7F7F7;--accent:#1A1A1A}
+body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.main{flex:1;overflow-y:auto;padding:20px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
+.voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 0 16px}
+.mic-btn{width:80px;height:80px;border-radius:50%;border:none;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.15);transition:transform .15s;position:relative;-webkit-user-select:none;user-select:none}
+.mic-btn svg{width:30px;height:30px;fill:#fff}
+.mic-btn.recording{transform:scale(1.1);box-shadow:0 4px 24px rgba(0,0,0,.25)}
+.mic-btn.recording::before{content:'';position:absolute;inset:-10px;border-radius:50%;border:2px solid rgba(0,0,0,.2);animation:ripple 1.2s infinite}
+.mic-btn.disabled{background:#CCC;box-shadow:none;cursor:default}
+@keyframes ripple{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.5);opacity:0}}
+.mic-label{margin-top:12px;font-size:13px;color:var(--muted);text-align:center;min-height:20px}
+.mic-label.recording{color:var(--fg);font-weight:500}
+.mic-hint{margin-top:3px;font-size:11px;color:#BBB;text-align:center;max-width:260px;line-height:1.5}
+.mic-hint a{color:var(--fg);text-decoration:underline;cursor:pointer;font-weight:500}
+.status-area{margin-top:4px}
+.task-card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:8px}
+.task-card .echo{font-size:14px;font-weight:500;color:var(--fg);margin-bottom:6px}
+.understand{background:#EEE;border-radius:8px;padding:8px 12px;font-size:12px;color:#555;margin:6px 0}
+.understand b{font-weight:600;color:var(--fg)}
+.stage-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0}
+.stage-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:3px;background:#DDD;transition:background .3s}
+.stage-dot.done{background:#555}.stage-dot.running{background:var(--fg);animation:pulse 1s infinite}.stage-dot.failed{background:#999}
 @keyframes pulse{50%{opacity:.4}}
 .stage-body{flex:1}
-.stage-name{font-size:13px;font-weight:500;color:#1A1A1A}
-.stage-note{font-size:11px;color:#888780;word-break:break-all;margin-top:1px}
-.result-box{border-radius:14px;padding:14px 16px;font-size:14px;margin-top:8px}
-.result-box.ok{background:#F0F9F4;color:#04342C;border:1px solid #B8E0CC}
-.result-box.err{background:#FEF0F0;color:#501313;border:1px solid #F0C4C4}
-.result-meta{font-size:11px;color:#888780;margin-top:6px}
-.task-time{font-size:11px;color:#B0AFAA;margin-top:6px}
-/* 底部栏 */
-.bottom-bar{flex-shrink:0;background:#fff;border-top:1px solid #F0EFEC;padding:8px 12px calc(8px + env(safe-area-inset-bottom))}
+.stage-name{font-size:13px;font-weight:500;color:var(--fg)}
+.stage-note{font-size:11px;color:var(--muted);word-break:break-all;margin-top:1px}
+.result-box{border-radius:12px;padding:12px 14px;font-size:13px;margin-top:6px}
+.result-box.ok{background:var(--card);color:var(--fg);border:1px solid var(--line)}
+.result-box.err{background:var(--card);color:#666;border:1px solid var(--line)}
+.result-meta{font-size:11px;color:#BBB;margin-top:4px}
+.task-time{font-size:11px;color:#CCC;margin-top:4px}
+.bottom-bar{flex-shrink:0;background:var(--bg);border-top:1px solid var(--line);padding:8px 14px calc(10px + env(safe-area-inset-bottom) + 52px)}
 .chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
-.chip{flex-shrink:0;padding:6px 14px;border:1px solid #E8E5DF;border-radius:16px;background:#fff;color:#5C5A52;font-size:12px;font-family:inherit;cursor:pointer;transition:all .15s}
-.chip:active{background:#D85A30;color:#fff;border-color:#D85A30}
+.chip{flex-shrink:0;padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:#555;font-size:12px;font-family:inherit;cursor:pointer;transition:all .12s}
+.chip:active{background:var(--accent);color:#fff;border-color:var(--accent)}
 .input-bar{display:flex;gap:8px;align-items:center}
-.input-bar input{flex:1;border:1px solid #E8E5DF;border-radius:22px;padding:11px 16px;font-size:15px;font-family:inherit;outline:none;background:#FAFAF8;transition:border-color .15s}
-.input-bar input:focus{border-color:#D85A30;background:#fff}
-.send-btn{width:44px;height:44px;border-radius:50%;border:none;background:#D85A30;color:#fff;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:background .15s}
-.send-btn:active{background:#B8482A}
-.send-btn svg{width:20px;height:20px;fill:#fff}
+.input-bar input{flex:1;border:1px solid var(--line);border-radius:20px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;background:var(--card);transition:border-color .15s}
+.input-bar input:focus{border-color:var(--fg);background:var(--bg)}
+.send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
+.send-btn:active{opacity:.7}
+.send-btn svg{width:18px;height:18px;fill:#fff}
+.dash-fab{position:fixed;top:12px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:10}
 </style></head><body>
-<div class="header">
-  <div class="brand"><span class="dot">龙</span><span class="name">龙虾脑</span><span class="sub">LobsterBrain</span></div>
-  <a href="/dashboard" class="dash-link" target="_blank">看板</a>
-</div>
-
+<a href="/dashboard" class="dash-fab" target="_blank">看板</a>
 <div class="main" id="main">
   <div class="voice-area">
     <button class="mic-btn" id="mic" type="button">
@@ -559,7 +580,7 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
     <button class="chip" onclick="quickSend('打开微信')">打开微信</button>
     <button class="chip" onclick="quickSend('截个屏')">截个屏</button>
     <button class="chip" onclick="quickSend('音量调大')">音量调大</button>
-    <button class="chip" onclick="quickSend('在微信里输入你好')">微信输入</button>
+    <button class="chip" onclick="quickSend('打开微信——输入你好')">微信输入你好</button>
     <button class="chip" onclick="quickSend('搜索《流浪地球》预告片并播放')">搜电影</button>
   </div>
   <div class="input-bar">
@@ -584,7 +605,7 @@ function initVoice(){
     var url='https://'+window.location.hostname+':'+hp;
     btn.classList.add('disabled');
     label.textContent='语音不可用';
-    hint.innerHTML='当前为 HTTP，需 HTTPS 才能用语音<br><a href="'+url+'">点此切换到 HTTPS →</a><br><span style="color:#B0AFAA">或直接用键盘语音输入</span>';
+    hint.innerHTML='需 HTTPS 才能用语音<br><a href="'+url+'">点此切换 →</a><br><span style="color:#CCC">或用键盘语音输入</span>';
     return;
   }
   if(!SR){
@@ -611,11 +632,13 @@ function initVoice(){
             .then(function(r){return r.json()})
             .then(function(d){
               document.getElementById('input').value=d.normalized;
-              label.innerHTML='已输入：<span style="color:#D85A30">'+esc(d.normalized)+'</span>';
+              label.innerHTML='已输入：'+esc(d.normalized);
+              setTimeout(submit,300);
             })
             .catch(function(){
               document.getElementById('input').value=raw;
-              label.textContent='已输入（未规范化）';
+              label.textContent='已输入';
+              setTimeout(submit,300);
             });
         }else{label.innerHTML='识别中：'+esc(interim)}
       };
