@@ -1428,6 +1428,185 @@ window.addEventListener('focus', function(){ setTimeout(probe, 300); });
 })();
 </script></body></html>`;
 
+/* ---------------- 全新极简手机入口 /m（每一步都显示结果/错误，独立于旧模板） ---------------- */
+const MINI_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>龙虾脑·遥控</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;background:#f2f3f5;color:#1a1a1a;padding:10px 12px 28px}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .top h1{font-size:16px;margin:0;font-weight:700}
+  .conn{font-size:12px;padding:3px 9px;border-radius:12px;background:#eee;color:#888}
+  .conn.ok{background:#e6f7ee;color:#0a8a4a}
+  .conn.err{background:#fdecea;color:#c0392b}
+  .log{display:none;margin:0 0 10px;padding:9px 11px;border-radius:9px;font-size:13px;line-height:1.45;word-break:break-all;background:#fff;border:1px solid #e5e5e5}
+  .log.ok{border-color:#b7e4c7}
+  .log.err{border-color:#f1b0a8;background:#fff6f5}
+  .box{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .box .t{font-size:12px;color:#999;margin-bottom:9px}
+  .row{display:flex;gap:8px}
+  .row input{flex:1;border:1px solid #ddd;border-radius:9px;padding:11px 12px;font-size:15px;outline:none}
+  .row input:focus{border-color:#1a1a1a}
+  .send{background:#1a1a1a;color:#fff;border:none;border-radius:9px;padding:0 18px;font-size:15px;font-weight:600}
+  .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .app{display:flex;flex-direction:column;align-items:center;gap:5px;background:#fafafa;border:1px solid #eee;border-radius:11px;padding:10px 4px;cursor:pointer}
+  .app:active{background:#f0f0f0}
+  .app .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700}
+  .app .lb{font-size:11px;color:#555}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{border:1px solid #e2e2e2;background:#fff;border-radius:999px;padding:7px 13px;font-size:13px;color:#333;cursor:pointer}
+  .chip:active{background:#f0f0f0}
+  .pad{height:200px;background:linear-gradient(135deg,#2b2b2b,#3a3a3a);border-radius:12px;touch-action:none;position:relative;overflow:hidden;color:#777;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .scrollwrap{display:flex;gap:10px;align-items:stretch}
+  .wheel{flex:1;background:linear-gradient(180deg,#e9e9e9,#dcdcdc);border-radius:10px;height:120px;touch-action:none;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px}
+  .wbts{display:flex;flex-direction:column;gap:8px;justify-content:center}
+  .wbt{width:54px;height:54px;border-radius:10px;border:1px solid #ddd;background:#fff;font-size:20px;color:#555}
+  .wbt:active{background:#1a1a1a;color:#fff}
+  .hint{font-size:11px;color:#aaa;text-align:center;margin-top:14px;line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="top"><h1>龙虾脑 · 遥控</h1><div id="conn" class="conn">连接中…</div></div>
+  <div id="log" class="log"></div>
+
+  <div class="box">
+    <div class="t">文字指令</div>
+    <div class="row">
+      <input id="cmd" placeholder="例如：打开微信 / 关闭当前应用 / 截个屏" />
+      <button class="send" id="sendBtn">发送</button>
+    </div>
+  </div>
+
+  <div class="box">
+    <div class="t">常用应用</div>
+    <div class="apps" id="apps"></div>
+  </div>
+
+  <div class="box">
+    <div class="t">快捷指令</div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="box">
+    <div class="t">鼠标控制（手指滑动移动 · 轻点=单击）</div>
+    <div class="pad" id="pad">在此滑动控制鼠标</div>
+  </div>
+
+  <div class="box">
+    <div class="t">滚动</div>
+    <div class="scrollwrap">
+      <div class="wheel" id="wheel">上下滑动滚动</div>
+      <div class="wbts">
+        <button class="wbt" id="sup">▲</button>
+        <button class="wbt" id="sdown">▼</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hint">语音需在 HTTPS 链接下使用（:8788）。本页无需令牌，同一 Wi-Fi 直接可用。<br>如仍无反应，请查看上方状态条与结果提示。</div>
+
+<script>
+var TOKEN = new URLSearchParams(location.search).get('t') || localStorage.getItem('lb_token') || '';
+if(TOKEN) try{localStorage.setItem('lb_token',TOKEN);}catch(e){}
+var $ = function(id){return document.getElementById(id);};
+function api(p, body){
+  var h = {'Content-Type':'application/json'};
+  if(TOKEN) h['x-lb-token']=TOKEN;
+  return fetch(p, {method: body?'POST':'GET', headers:h, body: body?JSON.stringify(body):undefined});
+}
+function log(msg, ok){
+  var el = $('log'); el.textContent = msg; el.style.display='block';
+  el.className = 'log ' + (ok===undefined?'':(ok?'ok':'err'));
+  el.scrollIntoView({block:'nearest'});
+}
+async function checkConn(){
+  try{
+    var r = await api('/api/status');
+    var el = $('conn');
+    if(r.ok){ el.textContent='● 已连接 Mac'; el.className='conn ok'; }
+    else { el.textContent='● 异常('+r.status+')'; el.className='conn err'; }
+  }catch(e){ var c=$('conn'); c.textContent='● 无法连接'; c.className='conn err'; }
+}
+async function sendTask(text){
+  if(!text || !text.trim()){ log('请输入指令', false); return; }
+  log('发送：'+text);
+  try{
+    var r = await api('/api/task', {text:text.trim()});
+    var j = await r.json().catch(function(){return {};});
+    if(r.ok){ log('✓ 已执行：'+text+(j.id?('（任务 '+j.id+'）'):''), true); }
+    else { log('✗ 服务器返回 '+r.status+'：'+(j.hint||j.error||'未知错误'), false); }
+  }catch(e){ log('✗ 网络错误：'+e.message+'（确认 Mac 服务在运行）', false); }
+}
+$('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; });
+$('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; } });
+
+var APPS = [
+  {n:'微信', c:'#07C160', g:'微'},
+  {n:'豆包', c:'#5B6CF5', g:'豆'},
+  {n:'抖音', c:'#161823', g:'抖'},
+  {n:'WorkBuddy', c:'#FF5900', g:'W'},
+  {n:'浏览器', c:'#1E9BF0', g:'S'},
+  {n:'备忘录', c:'#F5A623', g:'备'},
+  {n:'B站', c:'#FB7299', g:'B'},
+  {n:'网易云', c:'#E03A3A', g:'音'}
+];
+var appsEl = $('apps');
+APPS.forEach(function(a){
+  var b = document.createElement('div'); b.className='app';
+  b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.g+'</div><div class="lb">'+a.n+'</div>';
+  b.addEventListener('click', function(){ sendTask('打开'+a.n); });
+  appsEl.appendChild(b);
+});
+
+var CHIPS = ['关闭当前应用','最小化窗口','切换全屏','锁屏','截个屏','刷新','下一首','复制'];
+var chipsEl = $('chips');
+CHIPS.forEach(function(c){
+  var b = document.createElement('div'); b.className='chip'; b.textContent=c;
+  b.addEventListener('click', function(){ sendTask(c); });
+  chipsEl.appendChild(b);
+});
+
+// 鼠标控制
+(function(){
+  var pad = $('pad'), lastX=0, lastY=0, moved=false, lastSent=0, SPEED=1.6;
+  pad.addEventListener('touchstart', function(e){ var t=e.touches[0]; lastX=t.clientX; lastY=t.clientY; moved=false; e.preventDefault(); }, {passive:false});
+  pad.addEventListener('touchmove', function(e){
+    var t=e.touches[0]; var dx=(t.clientX-lastX), dy=(t.clientY-lastY);
+    lastX=t.clientX; lastY=t.clientY;
+    if(Math.abs(dx)>2||Math.abs(dy)>2) moved=true;
+    var now=Date.now();
+    if(now-lastSent>35){
+      lastSent=now;
+      api('/api/mouse', {dx:Math.round(dx*SPEED), dy:Math.round(dy*SPEED)});
+    }
+    e.preventDefault();
+  }, {passive:false});
+  pad.addEventListener('touchend', function(e){
+    if(!moved){ api('/api/mouse', {tap:true}); log('已单击', true); }
+    else { log('鼠标已移动', true); }
+    e.preventDefault();
+  }, {passive:false});
+})();
+
+// 滚动
+(function(){
+  var wheel = $('wheel'), wy=0;
+  wheel.addEventListener('touchstart', function(e){ wy=e.touches[0].clientY; e.preventDefault(); }, {passive:false});
+  wheel.addEventListener('touchmove', function(e){
+    var dy = e.touches[0].clientY - wy; wy=e.touches[0].clientY;
+    api('/api/mouse', {scroll: -Math.round(dy/3)});
+    e.preventDefault();
+  }, {passive:false});
+})();
+function scrollBy(n){ api('/api/mouse', {scroll:n}); }
+$('sup').addEventListener('click', function(){ scrollBy(4); });
+$('sdown').addEventListener('click', function(){ scrollBy(-4); });
+
+checkConn();
+</script>
+</body></html>`;
+
 /* ---------------- 运营看板 ---------------- */
 const DASH_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1989,6 +2168,7 @@ const server = http.createServer((req, res) => {
     }
   }
   if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
+  if (req.method === 'GET' && url.pathname === '/m') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MINI_PAGE); }
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
   if (req.method === 'GET' && url.pathname === '/manage') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MANAGE_PAGE); }
