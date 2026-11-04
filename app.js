@@ -536,7 +536,9 @@ function planText(it) {
   switch (it.action) {
     case 'system': return { volume_up: 'osascript 调高系统音量 +10', volume_down: 'osascript 调低系统音量 -10', mute: 'osascript 静音', brightness: '打开「显示设置」', screenshot: 'screencapture 截图保存到桌面', lock: '调用 CGSession 锁屏', trash: '高危操作，提示用户手动确认', settings: '打开系统设置' }[it.sub];
     case 'note': return '把内容写入剪贴板 → 打开备忘录 → 提示粘贴';
-    case 'type': return `open -a "${it.app}" → 等待 1.5s → pbcopy 写入剪贴板 → osascript 模拟 Cmd+V 粘贴`;
+    case 'type': return it.app
+      ? `open -a "${it.app}" → 等待 1.5s → pbcopy 写入剪贴板 → osascript 模拟 Cmd+V 粘贴`
+      : '直输模式：向当前前台应用直接粘贴文字（不打开应用、不解析指令）';
     case 'send_msg': return `open -a "${it.app || 'WeChat'}" → Cmd+F 搜「${it.contact}」→ 回车进会话 → 粘贴消息 → 回车发送`;
     case 'open':
       if (it.sub === 'open_app') return `open -a "${it.app}"`;
@@ -550,23 +552,27 @@ function planText(it) {
 }
 
 async function runTask(t) {
+  const fast = !!t.direct;   // 直输模式跳过演示性等待，连续输入不卡顿
   try {
-    setStage(t, 0, 'running'); await sleep(380);
+    setStage(t, 0, 'running'); await sleep(fast ? 60 : 380);
     if (!t.instruction.trim()) return fail(t, 0, '指令为空，请说出你想让 Mac 做什么');
-    const it = await parseInstruction(t.instruction);
+    // 直输模式：完全跳过 NLU，把原话当作「输入到当前前台应用」的文本
+    const it = t.direct
+      ? { action: 'type', target: t.instruction, app: null, appName: '当前应用', platform: null, contentType: null, raw: t.instruction, source: 'direct' }
+      : await parseInstruction(t.instruction);
     it._desc = describeIntent(it);
     t.intent = it; t.movie = it.target; t.platform = it.platform; t.action = it.action; save();
 
     if (it.action !== 'system' && it.action !== 'open_site' && !it.target) {
       return fail(t, 0, '没识别到操作对象，试试「百度一下 Python 教程」「打开微信」「截个屏」');
     }
-    setStage(t, 0, 'done', '理解：' + it._desc + ' · 解析：' + (it.source === 'llm' ? '大模型' : '规则引擎'));
+    setStage(t, 0, 'done', '理解：' + it._desc + ' · 解析：' + (it.source === 'llm' ? '大模型' : it.source === 'direct' ? '直输（跳过解析）' : '规则引擎'));
 
-    setStage(t, 1, 'running'); await sleep(480);
-    if (/失败|异常|权限|崩|报错/.test(t.instruction)) return fail(t, 1, '模拟异常：Mac 端「屏幕控制」权限未授权，任务中止（演示失败反馈）');
+    setStage(t, 1, 'running'); await sleep(fast ? 60 : 480);
+    if (!t.direct && /失败|异常|权限|崩|报错/.test(t.instruction)) return fail(t, 1, '模拟异常：Mac 端「屏幕控制」权限未授权，任务中止（演示失败反馈）');
     setStage(t, 1, 'done', '策略：' + planText(it));
 
-    setStage(t, 2, 'running'); await sleep(380);
+    setStage(t, 2, 'running'); await sleep(fast ? 60 : 380);
     let execNote, result;
     try {
       if (it.action === 'system') {
@@ -693,7 +699,7 @@ async function runTask(t) {
     }
     setStage(t, 2, 'done', execNote);
 
-    setStage(t, 3, 'running'); await sleep(360);
+    setStage(t, 3, 'running'); await sleep(fast ? 60 : 360);
     setStage(t, 3, 'done', result);
     t.status = 'success'; t.result = result; t.finishedAt = Date.now(); save();
     console.log(`[DONE] ${t.id} -> ${it._desc} (${t.finishedAt - t.createdAt}ms)`);
@@ -790,10 +796,17 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .mini-btn.ghost{background:transparent}
 .task-time{font-size:11px;color:#CCC;margin-top:4px}
 .bottom-bar{flex-shrink:0;background:var(--bg);border-top:1px solid var(--line);padding:8px 14px calc(10px + env(safe-area-inset-bottom) + 52px)}
-.chips{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.chips::-webkit-scrollbar{display:none}
-.chip{flex-shrink:0;padding:5px 12px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:#555;font-size:12px;font-family:inherit;cursor:pointer;transition:all .12s}
-.chip:active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.apps{display:flex;gap:10px;overflow-x:auto;margin-bottom:8px;padding:2px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.apps::-webkit-scrollbar{display:none}
+.app-tile{flex-shrink:0;width:54px;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;padding:0;font-family:inherit;cursor:pointer}
+.app-ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12);transition:transform .12s}
+.app-tile:active .app-ic{transform:scale(.9)}
+.app-lb{font-size:11px;color:#666;white-space:nowrap}
+.mode-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:12px;color:#666}
+.mode-bar.direct{background:#1A1A1A;border-color:#1A1A1A;color:#fff}
+.mode-txt{flex:1;line-height:1.35}
+.mode-btn{flex-shrink:0;border:1px solid currentColor;border-radius:14px;background:transparent;color:inherit;font-size:11px;font-family:inherit;padding:4px 10px;cursor:pointer;white-space:nowrap}
+.mode-bar.direct .mode-btn{background:#fff;color:#1A1A1A;border-color:#fff}
 .input-bar{display:flex;gap:8px;align-items:center}
 .input-bar input{flex:1;border:1px solid var(--line);border-radius:20px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;background:var(--card);transition:border-color .15s}
 .input-bar input:focus{border-color:var(--fg);background:var(--bg)}
@@ -850,13 +863,19 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
   <button onclick="doUnlock()" style="margin-top:12px;width:100%;max-width:300px;padding:12px;border:none;border-radius:10px;background:#1A1A1A;color:#fff;font-size:15px;cursor:pointer">解锁</button>
 </div>
 <div class="bottom-bar">
-  <div class="chips">
-    <button class="chip" onclick="quickSend('打开微信')">打开微信</button>
-    <button class="chip" onclick="quickSend('截个屏')">截个屏</button>
-    <button class="chip" onclick="quickSend('锁屏')">锁屏</button>
-    <button class="chip" onclick="quickSend('发微信给张三：晚点到')">发微信给张三</button>
-    <button class="chip" onclick="quickSend('打开微信——输入你好')">微信输入你好</button>
-    <button class="chip" onclick="quickSend('搜索《流浪地球》预告片并播放')">搜电影</button>
+  <div class="apps">
+    <button class="app-tile" onclick="openApp('微信','微信')"><span class="app-ic" style="background:#07C160">微</span><span class="app-lb">微信</span></button>
+    <button class="app-tile" onclick="openApp('豆包','豆包')"><span class="app-ic" style="background:#5B6CF5">豆</span><span class="app-lb">豆包</span></button>
+    <button class="app-tile" onclick="openApp('抖音','抖音')"><span class="app-ic" style="background:#161823">抖</span><span class="app-lb">抖音</span></button>
+    <button class="app-tile" onclick="openApp('WorkBuddy','WorkBuddy')"><span class="app-ic" style="background:#FF5900">W</span><span class="app-lb">WorkBuddy</span></button>
+    <button class="app-tile" onclick="openApp('浏览器','浏览器')"><span class="app-ic" style="background:#1E9BF0">S</span><span class="app-lb">浏览器</span></button>
+    <button class="app-tile" onclick="openApp('备忘录','备忘录')"><span class="app-ic" style="background:#F5A623">备</span><span class="app-lb">备忘录</span></button>
+    <button class="app-tile" onclick="openApp('哔哩哔哩','B站')"><span class="app-ic" style="background:#FB7299">B</span><span class="app-lb">B站</span></button>
+    <button class="app-tile" onclick="openApp('网易云音乐','网易云音乐')"><span class="app-ic" style="background:#E03A3A">音</span><span class="app-lb">网易云</span></button>
+  </div>
+  <div class="mode-bar" id="modeBar">
+    <span class="mode-txt" id="modeText">指令模式 · 输入会被解析成任务</span>
+    <button class="mode-btn" id="modeBtn" onclick="toggleDirect()" type="button">切到直输</button>
   </div>
   <div class="input-bar">
     <input type="text" id="input" placeholder="输入指令，或按住上方麦克风说话…" autocomplete="off" enterkeyhint="send">
@@ -875,6 +894,7 @@ function showLock(){ var el=document.getElementById('lock'); if(el) el.style.dis
 function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 var cur=null,timer=null;
 var rec=null,recognizing=false,voiceReady=false;
+var directMode=false;   // true=直输模式：输入原样打到 Mac 当前应用，不经 NLU
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 /* ---- 语音输入：按住说话，松开转文字 ---- */
@@ -908,19 +928,26 @@ function initVoice(){
         for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}
         if(final){
           var raw=final.trim();
-          label.innerHTML='正在翻译…';
-          lbFetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
-            .then(function(r){return r.json()})
-            .then(function(d){
-              document.getElementById('input').value=d.normalized;
-              label.innerHTML='已输入：'+esc(d.normalized);
-              setTimeout(submit,300);
-            })
-            .catch(function(){
-              document.getElementById('input').value=raw;
-              label.textContent='已输入';
-              setTimeout(submit,300);
-            });
+          if(directMode){
+            // 直输：保留原话，不做口语规范化（规范化会把口语改写成指令式文本）
+            document.getElementById('input').value=raw;
+            label.innerHTML='直输：'+esc(raw);
+            setTimeout(submit,300);
+          }else{
+            label.innerHTML='正在翻译…';
+            lbFetch('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:raw})})
+              .then(function(r){return r.json()})
+              .then(function(d){
+                document.getElementById('input').value=d.normalized;
+                label.innerHTML='已输入：'+esc(d.normalized);
+                setTimeout(submit,300);
+              })
+              .catch(function(){
+                document.getElementById('input').value=raw;
+                label.textContent='已输入';
+                setTimeout(submit,300);
+              });
+          }
         }else{label.innerHTML='识别中：'+esc(interim)}
       };
       rec.onerror=function(ev){
@@ -956,17 +983,48 @@ function quickSend(v){
   submit();
 }
 
-/* ---- 提交任务 ---- */
+/* ---- 直输模式：输入原样填写到 Mac 当前应用输入框，不经 NLU ---- */
+function setDirect(on,label){
+  directMode=!!on;
+  var bar=document.getElementById('modeBar'),txt=document.getElementById('modeText');
+  var btn=document.getElementById('modeBtn'),inp=document.getElementById('input');
+  if(!bar)return;
+  if(directMode){
+    bar.classList.add('direct');
+    txt.textContent='直输模式'+(label?' · 已打开「'+label+'」':'')+'：输入原样填到 Mac 输入框，不执行指令';
+    btn.textContent='返回指令';
+    if(inp)inp.placeholder='直接输入文字（原样填写）…';
+  }else{
+    bar.classList.remove('direct');
+    txt.textContent='指令模式 · 输入会被解析成任务';
+    btn.textContent='切到直输';
+    if(inp)inp.placeholder='输入指令，或按住上方麦克风说话…';
+  }
+}
+function toggleDirect(){ setDirect(!directMode); }
+function openApp(name,label){
+  setDirect(false);         // 先退出直输，确保「打开X」作为指令执行（否则会被当成文本打进当前应用）
+  quickSend('打开'+name);
+  setDirect(true,label);    // 再切直输：接着说话/打字直接填进该 app
+}
+
+/* ---- 提交任务（指令模式走 NLU；直输模式原样填写）---- */
 async function submit(){
   var v=document.getElementById('input').value.trim();
   if(!v){document.getElementById('input').focus();return}
+  var isDirect=directMode;
+  // 直输模式下的「逃生词」：说了就切回指令模式，且不发送
+  if(isDirect && /^(退出直输|退出输入|返回指令|指令模式|结束直输)$/.test(v)){
+    document.getElementById('input').value=''; setDirect(false); return;
+  }
   document.getElementById('input').value='';
   document.getElementById('send').style.opacity='.5';
   try{
-    var r=await lbFetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:v})});
+    var payload=isDirect?{instruction:v,direct:true}:{instruction:v};
+    var r=await lbFetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     cur=(await r.json()).id;
     var sa=document.getElementById('statusArea');
-    sa.innerHTML='<div class="task-card"><div class="echo">「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
+    sa.innerHTML='<div class="task-card"><div class="echo">'+(isDirect?'直输：':'')+'「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
     clearInterval(timer);timer=setInterval(poll,900);poll();
   }catch(e){
     document.getElementById('statusArea').innerHTML='<div class="task-card"><div class="result-box err">网络错误：'+esc(e.message)+'</div></div>';
@@ -1370,6 +1428,15 @@ loadToken();
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  // 证书下载：手机 Safari 打开后可安装为受信任根证书（公钥文件，无需令牌）
+  if (req.method === 'GET' && url.pathname === '/cert.crt') {
+    const f = path.join(__dirname, 'cert', 'lobsterbrain.crt');
+    if (!fs.existsSync(f)) { res.statusCode = 404; return res.end('cert not found'); }
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+    res.setHeader('Content-Disposition', 'attachment; filename="LobsterBrain.crt"');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end(fs.readFileSync(f));
+  }
   // ===== 访问控制：所有 /api/ 接口（非本机）必须携带有效令牌 =====
   if (url.pathname.startsWith('/api/')) {
     if (url.pathname === '/api/auth/info') {
@@ -1519,8 +1586,8 @@ const server = http.createServer((req, res) => {
     req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
     req.on('end', () => {
       try {
-        const { instruction } = JSON.parse(body || '{}');
-        const t = makeTask(instruction); tasks.push(t); save(); runTask(t);
+        const { instruction, direct } = JSON.parse(body || '{}');
+        const t = makeTask(instruction, direct ? { direct: true } : {}); tasks.push(t); save(); runTask(t);
         res.end(JSON.stringify({ id: t.id }));
       } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad request' })); }
     });
