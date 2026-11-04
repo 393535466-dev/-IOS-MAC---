@@ -135,8 +135,8 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td>本地运行</td><td>服务运行于 Mac 本机，不部署 Vercel</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="2"><b>可观测</b></td><td>状态回传</td><td>四阶段时间轴（解析 → 规划 → 执行 → 回传）+ 可视化</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>运营看板</td><td>/dashboard：成功率、平均耗时、近 7 日柱状图、明细</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td><b>快捷入口</b></td><td>常用 App 图标</td><td>点图标直接打开微信 / 豆包 / 抖音 / WorkBuddy / 浏览器 / 备忘录 / B站 / 网易云音乐，并自动进入直输模式</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td><b>指令理解</b></td><td>直输模式</td><td>输入 / 语音原样填写到 Mac 当前应用输入框，跳过意图解析与口语规范化；显眼模式条 + 一键退出 / 逃生词，不执行指令、不自动发送</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>快捷入口</b></td><td>常用 App 图标</td><td>点图标直接打开微信 / 豆包 / 抖音 / WorkBuddy / 浏览器 / 备忘录 / B站 / 网易云音乐，并让下一条输入直输（发完自动复原）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>指令理解</b></td><td>直输模式</td><td>输入 / 语音原样填写到 Mac 当前应用输入框，跳过意图解析与口语规范化；默认仅对下一条生效（发完自动回指令模式），明确指令自动识别并逃逸，另有「指令：」「原文：」强制通道与逃生词，不自动发送</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>安全</b></td><td>HTTPS 证书与固定入口</td><td>自签证书含 .local 域名 + 新旧 IP 的 SAN、CA:TRUE / serverAuth；/cert.crt 供手机安装为受信任根证书，IP 变化不影响固定入口</td><td class="ok">✅ 已实现</td></tr>
   </table>
   <p style="margin-top:10px;font-size:13px;color:#888780">辅助功能：自动输入 / 鼠标点击依赖 macOS「辅助功能」授权，需在系统设置中授权运行 <code>node app.js</code> 的程序（终端 / VS Code / WorkBuddy 等）。</p>

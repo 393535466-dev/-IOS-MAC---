@@ -442,6 +442,19 @@ async function callLLM(text) {
   } catch (e) { console.log('[LLM] 降级本地:', e.message); return null; }
 }
 
+// 直输模式下的「指令逃逸」：用户输入的其实是一条明确指令时，按指令执行，
+// 而不是当成文字填进输入框。判定刻意保守：只认以明确动作词开头的短句，
+// 且排除 type（输入/写）——否则「写一份周报」会被剥词后误当指令。
+const ESCAPE_CMD_RE = /^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便|来个?)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|抓屏|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|清空垃圾|清垃圾|系统设置|打开设置|系统偏好|偏好设置|搜索|搜一下|搜搜|搜个|检索|查询|查一下|查查|查找|百度一下|谷歌一下|播放|放一下|听歌|听一下|发微信给|发消息给|发短信给|发信息给|给.+发(?:微信|消息|短信|信息)|用微信给|提醒我|记到备忘录)/;
+function commandEscape(raw) {
+  const s = (raw || '').trim();
+  if (!s || s.length > 60 || !ESCAPE_CMD_RE.test(s)) return null;
+  const p = localParse(s);
+  if (!p || p.lowConfidence || !p.action || p.action === 'type') return null;
+  if (p.action !== 'system' && !p.target) return null;
+  return p;
+}
+
 async function parseInstruction(text) {
   const raw = (text || '').trim();
   // 先跑规则引擎：打开/系统/输入/发消息等明确指令秒级响应，避免每条都等待 LLM（既慢又易翻译错）
@@ -556,20 +569,29 @@ async function runTask(t) {
   try {
     setStage(t, 0, 'running'); await sleep(fast ? 60 : 380);
     if (!t.instruction.trim()) return fail(t, 0, '指令为空，请说出你想让 Mac 做什么');
-    // 直输模式：完全跳过 NLU，把原话当作「输入到当前前台应用」的文本
-    const it = t.direct
-      ? { action: 'type', target: t.instruction, app: null, appName: '当前应用', platform: null, contentType: null, raw: t.instruction, source: 'direct' }
-      : await parseInstruction(t.instruction);
+    // 直输：默认把原话填进当前前台应用；若它其实是一条明确指令（且未标记「原文」），
+    // 自动逃逸成指令并退出直输——用户永远不会被困在输入框里下不了指令。
+    let it, escaped = false;
+    if (t.direct) {
+      const cmd = t.forceText ? null : commandEscape(t.instruction);
+      if (cmd) {
+        it = cmd; it.source = 'rule'; escaped = true; t.escaped = true; t.direct = false; save();
+      } else {
+        it = { action: 'type', target: t.instruction, app: null, appName: '当前应用', platform: null, contentType: null, raw: t.instruction, source: 'direct' };
+      }
+    } else {
+      it = await parseInstruction(t.instruction);
+    }
     it._desc = describeIntent(it);
     t.intent = it; t.movie = it.target; t.platform = it.platform; t.action = it.action; save();
 
     if (it.action !== 'system' && it.action !== 'open_site' && !it.target) {
       return fail(t, 0, '没识别到操作对象，试试「百度一下 Python 教程」「打开微信」「截个屏」');
     }
-    setStage(t, 0, 'done', '理解：' + it._desc + ' · 解析：' + (it.source === 'llm' ? '大模型' : it.source === 'direct' ? '直输（跳过解析）' : '规则引擎'));
+    setStage(t, 0, 'done', (escaped ? '识别为指令 · 已自动退出直输 · ' : '') + '理解：' + it._desc + ' · 解析：' + (it.source === 'llm' ? '大模型' : it.source === 'direct' ? '直输（跳过解析）' : '规则引擎'));
 
     setStage(t, 1, 'running'); await sleep(fast ? 60 : 480);
-    if (!t.direct && /失败|异常|权限|崩|报错/.test(t.instruction)) return fail(t, 1, '模拟异常：Mac 端「屏幕控制」权限未授权，任务中止（演示失败反馈）');
+    if (!t.direct && !escaped && /失败|异常|权限|崩|报错/.test(t.instruction)) return fail(t, 1, '模拟异常：Mac 端「屏幕控制」权限未授权，任务中止（演示失败反馈）');
     setStage(t, 1, 'done', '策略：' + planText(it));
 
     setStage(t, 2, 'running'); await sleep(fast ? 60 : 380);
@@ -807,6 +829,7 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .mode-txt{flex:1;line-height:1.35}
 .mode-btn{flex-shrink:0;border:1px solid currentColor;border-radius:14px;background:transparent;color:inherit;font-size:11px;font-family:inherit;padding:4px 10px;cursor:pointer;white-space:nowrap}
 .mode-bar.direct .mode-btn{background:#fff;color:#1A1A1A;border-color:#fff}
+.mode-sub{display:block;font-size:10.5px;opacity:.7;margin-top:2px;line-height:1.35}
 .input-bar{display:flex;gap:8px;align-items:center}
 .input-bar input{flex:1;border:1px solid var(--line);border-radius:20px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;background:var(--card);transition:border-color .15s}
 .input-bar input:focus{border-color:var(--fg);background:var(--bg)}
@@ -874,8 +897,8 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
     <button class="app-tile" onclick="openApp('网易云音乐','网易云音乐')"><span class="app-ic" style="background:#E03A3A">音</span><span class="app-lb">网易云</span></button>
   </div>
   <div class="mode-bar" id="modeBar">
-    <span class="mode-txt" id="modeText">指令模式 · 输入会被解析成任务</span>
-    <button class="mode-btn" id="modeBtn" onclick="toggleDirect()" type="button">切到直输</button>
+    <span class="mode-txt" id="modeText"><b>指令模式</b> · 输入会被解析成任务</span>
+    <button class="mode-btn" id="modeBtn" onclick="toggleDirect()" type="button">连续直输</button>
   </div>
   <div class="input-bar">
     <input type="text" id="input" placeholder="输入指令，或按住上方麦克风说话…" autocomplete="off" enterkeyhint="send">
@@ -894,7 +917,14 @@ function showLock(){ var el=document.getElementById('lock'); if(el) el.style.dis
 function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 var cur=null,timer=null;
 var rec=null,recognizing=false,voiceReady=false;
-var directMode=false;   // true=直输模式：输入原样打到 Mac 当前应用，不经 NLU
+// 直输不再是粘性全局开关：默认只对「下一条」生效，发完自动回到指令模式。
+var directLeft=0;       // 剩余一次性直输条数（点 App 图标后置 1）
+var directLock=false;   // 用户显式开启的连续直输
+var directLabel='';
+function isDirect(){ return directLock || directLeft>0; }
+// 客户端即时判定：直输状态下说的是短指令，立刻按指令执行并退出（服务端 commandEscape 为兜底）
+var QUICK_CMD=/^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|系统设置|打开设置|搜索|搜一下|搜搜|检索|查询|查一下|查找|百度一下|谷歌一下|播放|放一下|听歌|发微信给|发消息给|通知.+[:：]|告诉.+[:：]|给.+发(?:微信|消息|短信|信息)|提醒我|记到备忘录)/;
+function looksLikeCmd(s){ return s.length<=28 && QUICK_CMD.test(s); }
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 
 /* ---- 语音输入：按住说话，松开转文字 ---- */
@@ -928,7 +958,7 @@ function initVoice(){
         for(var i=e.resultIndex;i<e.results.length;i++){if(e.results[i].isFinal)final+=e.results[i][0].transcript;else interim+=e.results[i][0].transcript}
         if(final){
           var raw=final.trim();
-          if(directMode){
+          if(isDirect()){
             // 直输：保留原话，不做口语规范化（规范化会把口语改写成指令式文本）
             document.getElementById('input').value=raw;
             label.innerHTML='直输：'+esc(raw);
@@ -983,48 +1013,81 @@ function quickSend(v){
   submit();
 }
 
-/* ---- 直输模式：输入原样填写到 Mac 当前应用输入框，不经 NLU ---- */
-function setDirect(on,label){
-  directMode=!!on;
+/* ---- 直输：默认只对「下一条」生效，发完自动回到指令模式 ---- */
+function renderMode(){
   var bar=document.getElementById('modeBar'),txt=document.getElementById('modeText');
   var btn=document.getElementById('modeBtn'),inp=document.getElementById('input');
   if(!bar)return;
-  if(directMode){
+  if(isDirect()){
     bar.classList.add('direct');
-    txt.textContent='直输模式'+(label?' · 已打开「'+label+'」':'')+'：输入原样填到 Mac 输入框，不执行指令';
-    btn.textContent='返回指令';
-    if(inp)inp.placeholder='直接输入文字（原样填写）…';
+    var scope=directLock?'连续直输（点右侧退出）':'本次直输 · 发完自动回指令模式';
+    txt.innerHTML='<b>'+scope+'</b>'+(directLabel?' · 已打开「'+esc(directLabel)+'」':'')+
+      '<span class="mode-sub">下指令直接说会自动识别并退出；想把指令当文字输入，前面加「原文：」</span>';
+    btn.textContent=directLock?'退出直输':'取消本次';
+    if(inp)inp.placeholder='输入文字（原样填写）…';
   }else{
     bar.classList.remove('direct');
-    txt.textContent='指令模式 · 输入会被解析成任务';
-    btn.textContent='切到直输';
+    txt.innerHTML='<b>指令模式</b> · 输入会被解析成任务';
+    btn.textContent='连续直输';
     if(inp)inp.placeholder='输入指令，或按住上方麦克风说话…';
   }
 }
-function toggleDirect(){ setDirect(!directMode); }
+function setDirect(on,label,once){
+  if(on){
+    directLabel=label||'';
+    if(once){ directLock=false; directLeft=1; }
+    else{ directLock=true; directLeft=0; }
+  }else{ directLock=false; directLeft=0; directLabel=''; }
+  renderMode();
+}
+function consumeDirect(){
+  if(directLock)return;                       // 连续直输由用户显式退出
+  if(directLeft>0){ directLeft--; if(directLeft<=0)setDirect(false); }
+}
+function toggleDirect(){ setDirect(!isDirect(),'',false); }
 function openApp(name,label){
-  setDirect(false);         // 先退出直输，确保「打开X」作为指令执行（否则会被当成文本打进当前应用）
+  setDirect(false);                           // 确保「打开X」作为指令执行
   quickSend('打开'+name);
-  setDirect(true,label);    // 再切直输：接着说话/打字直接填进该 app
+  setDirect(true,label,true);                 // 仅下一条输入直输，之后自动复原
 }
 
-/* ---- 提交任务（指令模式走 NLU；直输模式原样填写）---- */
+/* ---- 提交任务：指令模式走 NLU；直输原样填写，且发完自动复原 ---- */
 async function submit(){
-  var v=document.getElementById('input').value.trim();
-  if(!v){document.getElementById('input').focus();return}
-  var isDirect=directMode;
-  // 直输模式下的「逃生词」：说了就切回指令模式，且不发送
-  if(isDirect && /^(退出直输|退出输入|返回指令|指令模式|结束直输)$/.test(v)){
-    document.getElementById('input').value=''; setDirect(false); return;
+  var inp=document.getElementById('input');
+  var v=inp.value.trim();
+  if(!v){inp.focus();return}
+  // 逃生：任何时候提到这些词都立刻回到指令模式（包含匹配，语音带语气词也能命中）
+  if(isDirect() && /退出直输|退出输入|返回指令|指令模式|结束直输|取消直输|不要直输|别直输/.test(v)){
+    inp.value=''; setDirect(false); return;
   }
-  document.getElementById('input').value='';
+  var payload,echoTag;
+  var forceCmd=v.match(/^(?:指令|执行)[:：]\s*(.+)$/);
+  var forceText=v.match(/^(?:原文|照抄|输入)[:：]\s*(.+)$/);
+  if(forceCmd){
+    // 强制按指令执行：无论当前在哪个模式，并立刻退出直输
+    v=forceCmd[1].trim(); payload={instruction:v}; echoTag='指令：';
+    if(isDirect())setDirect(false);
+  }else if(forceText){
+    // 强制当成原文输入：即使这句话长得像指令，也不做逃逸判定
+    v=forceText[1].trim(); payload={instruction:v,direct:true,forceText:true}; echoTag='原文：';
+  }else if(isDirect() && looksLikeCmd(v)){
+    // 直输状态下说的是明确指令：直接按指令执行，并立刻退出直输
+    payload={instruction:v}; echoTag='指令：';
+    setDirect(false);
+  }else if(isDirect()){
+    payload={instruction:v,direct:true}; echoTag='直输：';
+  }else{
+    payload={instruction:v}; echoTag='指令：';
+  }
+  // 一次性直输发完立即复原，界面马上变回「指令模式」
+  if(payload.direct)consumeDirect();
+  inp.value='';
   document.getElementById('send').style.opacity='.5';
   try{
-    var payload=isDirect?{instruction:v,direct:true}:{instruction:v};
     var r=await lbFetch('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     cur=(await r.json()).id;
     var sa=document.getElementById('statusArea');
-    sa.innerHTML='<div class="task-card"><div class="echo">'+(isDirect?'直输：':'')+'「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
+    sa.innerHTML='<div class="task-card"><div class="echo">'+echoTag+'「'+esc(v)+'」</div><div id="understand"></div><div id="stages"></div><div class="task-time" id="meta"></div></div><div id="resultBox"></div>';
     clearInterval(timer);timer=setInterval(poll,900);poll();
   }catch(e){
     document.getElementById('statusArea').innerHTML='<div class="task-card"><div class="result-box err">网络错误：'+esc(e.message)+'</div></div>';
@@ -1036,9 +1099,11 @@ async function submit(){
 async function poll(){
   if(!cur)return;
   var r=await lbFetch('/api/task/'+cur);if(!r.ok)return;var t=await r.json();
+  // 服务端判定「这条其实是指令」并逃逸执行 → 手机端立刻跟着退出直输
+  if(t.escaped&&isDirect())setDirect(false);
   var u=document.getElementById('understand');
   if(t.intent&&t.intent._desc&&t.stages[0].state==='done'){
-    u.innerHTML='<div class="understand"><b>我理解：</b>'+esc(t.intent._desc)+'</div>';
+    u.innerHTML='<div class="understand"><b>我理解：</b>'+esc(t.intent._desc)+(t.escaped?'<br><span style="color:#0A7">已识别为指令，自动退出直输</span>':'')+'</div>';
   }
   document.getElementById('stages').innerHTML=t.stages.map(function(s){
     var d=s.state==='done'?'done':s.state==='running'?'running':s.state==='failed'?'failed':'';
@@ -1067,6 +1132,7 @@ let _proc='';
 (async function(){try{var d=await (await lbFetch('/api/accessibility')).json();if(d.processName)_proc=d.processName;}catch(e){}})();
 async function openMacSettings(){try{await lbFetch('/api/accessibility',{method:'POST'});}catch(e){}}
 initVoice();
+renderMode();
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
 (function(){
@@ -1586,8 +1652,8 @@ const server = http.createServer((req, res) => {
     req.on('data', c => { body += c; if (body.length > 1e5) req.destroy(); });
     req.on('end', () => {
       try {
-        const { instruction, direct } = JSON.parse(body || '{}');
-        const t = makeTask(instruction, direct ? { direct: true } : {}); tasks.push(t); save(); runTask(t);
+        const { instruction, direct, forceText } = JSON.parse(body || '{}');
+        const t = makeTask(instruction, direct ? { direct: true, forceText: !!forceText } : {}); tasks.push(t); save(); runTask(t);
         res.end(JSON.stringify({ id: t.id }));
       } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad request' })); }
     });
