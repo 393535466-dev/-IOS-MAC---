@@ -42,6 +42,7 @@ function initMouse() {
 initMouse();
 
 const PORT = process.env.PORT || 8787;
+const VERSION = '3.1.0';
 const DATA_FILE = path.join(__dirname, 'tasks.json');
 const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封神第二部', '沙丘2', '奥本海默', '碟中谍8', '雄狮少年2'];
 
@@ -1490,6 +1491,154 @@ load();
 loadToken();
 </script></body></html>`;
 
+/* ---------------- 常驻控制台 /manage ---------------- */
+const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>龙虾脑 · 控制台</title>
+<style>
+  :root{ --bg:#FAFAF8; --fg:#1A1A1A; --muted:#6B6B6B; --line:#E3E1DB; --ember:#E8451F; --ok:#1E9E6A; --err:#A32D2D; }
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);margin:0;padding:24px;line-height:1.6}
+  .wrap{max-width:720px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;margin-bottom:16px}
+  .card h2{font-size:14px;margin:0 0 12px;font-weight:600}
+  .kv{display:flex;justify-content:space-between;gap:12px;font-size:13px;padding:5px 0;border-bottom:1px dashed var(--line)}
+  .kv:last-child{border-bottom:none}
+  .kv .k{color:var(--muted)}
+  .kv .v{text-align:right;word-break:break-all}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600}
+  .pill.ok{background:#E7F5EE;color:#1E9E6A}
+  .pill.err{background:#FCEBEB;color:#A32D2D}
+  .links{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .linkbox{border:1px solid var(--line);border-radius:10px;padding:12px}
+  .linkbox .t{font-size:12px;color:var(--muted);margin-bottom:6px}
+  .linkbox code{font-size:12px;word-break:break-all;display:block;margin-bottom:8px}
+  button{cursor:pointer;font-family:inherit;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 12px;font-size:13px}
+  button.primary{background:var(--ember);color:#fff;border-color:var(--ember)}
+  button:active{opacity:.7}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  #qr{display:flex;justify-content:center;margin:8px 0}
+  .hint{font-size:12px;color:var(--muted)}
+  a{color:var(--ember);text-decoration:none}
+</style></head>
+<body><div class="wrap">
+<h1>龙虾脑 · 控制台</h1>
+<div class="sub">常驻管理页：开机自启 / 扫码连接 / 连接诊断 / 一键重载。仅限 Mac 本机访问。</div>
+
+<div class="card"><h2>运行状态</h2><div id="status">加载中…</div></div>
+
+<div class="card"><h2>手机连接（扫码或复制）</h2>
+  <div class="links">
+    <div class="linkbox"><div class="t">文字输入（HTTP，推荐）</div><code id="lkHttp"></code><button onclick="copyText('lkHttp')">复制</button></div>
+    <div class="linkbox"><div class="t">语音输入（HTTPS，需装证书）</div><code id="lkHttps"></code><button onclick="copyText('lkHttps')">复制</button></div>
+  </div>
+  <div id="qr"></div>
+  <div class="hint">用手机相机扫上方二维码即可直达（已含访问令牌，请勿外传）。若二维码为空，复制上方链接同样可用。</div>
+</div>
+
+<div class="card"><h2>连接诊断</h2>
+  <div class="kv"><span class="k">局域网 IP</span><span class="v" id="dIp"></span></div>
+  <div class="kv"><span class="k">HTTPS 证书</span><span class="v" id="dCert"></span></div>
+  <div class="kv"><span class="k">辅助功能授权</span><span class="v" id="dAcc"></span></div>
+  <div class="kv"><span class="k">开机自启（launchd）</span><span class="v" id="dLaunch"></span></div>
+  <div class="kv"><span class="k">手机同 Wi-Fi 自检</span><span class="v" id="dWifi">在手机访问上方链接；能打开即同网</span></div>
+</div>
+
+<div class="card"><h2>控制</h2>
+  <div class="row">
+    <button class="primary" onclick="act('reload')">一键重载</button>
+    <button onclick="act('stop')">停止服务</button>
+    <button onclick="location.href='/cert.crt'">下载证书</button>
+    <button onclick="location.href='/api/accessibility'">打开辅助功能设置</button>
+    <button onclick="location.href='/dashboard'">运营看板</button>
+    <button onclick="location.href='/config'">令牌/配置</button>
+  </div>
+  <div id="msg" class="hint" style="margin-top:10px"></div>
+</div>
+</div>
+<script src="/public/qrcode.js"></script>
+<script>
+function copyText(id){var t=document.getElementById(id).textContent;navigator.clipboard.writeText(t).then(function(){setMsg('已复制：'+t.slice(0,42)+'…')});}
+function setMsg(m){document.getElementById('msg').textContent=m;}
+function pill(ok,label){return '<span class="pill '+(ok?'ok':'err')+'">'+label+'</span>';}
+async function act(a){
+  if(a==='stop' && !confirm('确定停止服务？停止后需重新启动才能连接。')) return;
+  try{
+    await fetch('/api/'+a,{method:'POST'});
+    setMsg(a==='reload'?'正在重载，约 1 秒后刷新本页…':'正在停止…');
+    setTimeout(function(){location.reload();},1200);
+  }catch(e){setMsg('操作失败：'+e.message);}
+}
+async function load(){
+  try{
+    var d=await (await fetch('/api/status')).json();
+    var html='';
+    html+='<div class="kv"><span class="k">版本</span><span class="v">v'+d.version+'</span></div>';
+    html+='<div class="kv"><span class="k">进程</span><span class="v">PID '+d.pid+' · 已运行 '+Math.round(d.uptime/60)+' 分钟</span></div>';
+    html+='<div class="kv"><span class="k">HTTP 端口</span><span class="v">'+d.httpPort+'</span></div>';
+    html+='<div class="kv"><span class="k">HTTPS 端口</span><span class="v">'+d.httpsPort+'</span></div>';
+    html+='<div class="kv"><span class="k">访问令牌</span><span class="v">'+d.token+'</span></div>';
+    document.getElementById('status').innerHTML=html;
+    document.getElementById('lkHttp').textContent=d.phoneLinkLocal;
+    document.getElementById('lkHttps').textContent=d.phoneLinkHttps;
+    document.getElementById('dIp').textContent=d.lanIP+(d.ips&&d.ips.length>1?('（多网卡：'+d.ips.join(', ')+'）'):'');
+    document.getElementById('dCert').innerHTML=d.hasCert?pill(true,'已生成'):pill(false,'缺失');
+    document.getElementById('dLaunch').innerHTML=d.launchd?pill(true,'已启用'):pill(false,'未启用');
+    try{
+      var qr=qrcode(0,'M');qr.addData(d.phoneLinkLocal);qr.make();
+      document.getElementById('qr').innerHTML=qr.createSvgTag({cellSize:5,margin:10,alt:'连接二维码'});
+    }catch(e){document.getElementById('qr').innerHTML='<span class="hint">二维码生成失败，请复制上方链接</span>';}
+  }catch(e){
+    document.getElementById('status').innerHTML='<span class="pill err">无法读取状态（需本机访问）</span>';
+  }
+}
+load();
+(async function(){try{var a=await (await fetch('/api/accessibility')).json();var el=document.getElementById('dAcc');if(el)el.innerHTML=a.granted?pill(true,'已授权'):pill(false,'未授权');}catch(e){}})();
+</script>
+</body></html>`;
+
+/* 启动辅助：带 EADDRINUSE 重试的监听（重载/重启时旧进程可能短暂占用端口） */
+function listenWithRetry(srv, port, host, label, onSuccess) {
+  let tries = 40;
+  const attempt = () => {
+    srv.once('error', (e) => {
+      if (e.code === 'EADDRINUSE' && tries-- > 0) { setTimeout(attempt, 300); }
+      else console.error(label + ' 监听失败:', e.message);
+    });
+    srv.listen(port, host, () => { console.log(label + ' 已启动: ' + host + ':' + port); if (onSuccess) onSuccess(); });
+  };
+  attempt();
+}
+
+/* 软重载：launchd 托管时直接退出由系统拉起（单实例）；手动启动时派生新进程再退出 */
+function restartSelf() {
+  if (process.env.LB_LAUNCHED) { setTimeout(() => process.exit(0), 200); return; }
+  try {
+    const cp = require('child_process');
+    const child = cp.spawn(process.execPath, [__filename], { detached: true, stdio: 'ignore', cwd: __dirname, env: process.env });
+    child.unref();
+  } catch (e) {}
+  setTimeout(() => process.exit(0), 250);
+}
+
+function startHttps() {
+  const certDir = path.join(__dirname, 'cert');
+  const certFile = path.join(certDir, 'cert.pem');
+  const keyFile = path.join(certDir, 'key.pem');
+  if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
+    try {
+      const sslOpts = { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) };
+      const hsrv = https.createServer(sslOpts, server.listeners('request')[0]);
+      listenWithRetry(hsrv, HTTPS_PORT, '0.0.0.0', '龙虾脑 HTTPS');
+      console.log('  手机端（语音输入）:  https://' + lanIP() + ':' + HTTPS_PORT + '  注意：首次打开需点「高级→继续」信任证书');
+      console.log('  本机 / 看板:         https://localhost:' + HTTPS_PORT + '/dashboard');
+    } catch (e) { console.log('  HTTPS 启动失败（不影响文字输入）:', e.message); }
+  } else {
+    console.log('  未找到 cert/ 证书，语音输入不可用。运行 bin/gen-cert.sh 后重启。');
+  }
+}
+
 /* ---------------- HTTP ---------------- */
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
@@ -1502,6 +1651,51 @@ const server = http.createServer((req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="LobsterBrain.crt"');
     res.setHeader('Cache-Control', 'no-store');
     return res.end(fs.readFileSync(f));
+  }
+  // 静态资源（仅 public/ 下，防目录穿越）
+  if (req.method === 'GET' && url.pathname.startsWith('/public/')) {
+    const base = path.join(__dirname, 'public');
+    const f = path.join(base, url.pathname.replace(/^\/public\//, ''));
+    if (f.startsWith(base) && fs.existsSync(f) && fs.statSync(f).isFile()) {
+      const ext = path.extname(f).toLowerCase();
+      const ct = ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : 'application/octet-stream';
+      res.setHeader('Content-Type', ct);
+      res.setHeader('Cache-Control', 'no-store');
+      return res.end(fs.readFileSync(f));
+    }
+    res.statusCode = 404; return res.end('not found');
+  }
+  // 服务状态（仅本机）
+  if (req.method === 'GET' && url.pathname === '/api/status') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+    const ifaces = os.networkInterfaces();
+    const ips = [];
+    for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
+    const hasCert = fs.existsSync(path.join(__dirname, 'cert', 'cert.pem'));
+    const launchd = fs.existsSync(path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.lobsterbrain.plist'));
+    const localName = (os.hostname().split('.')[0]) + '.local';
+    return res.end(JSON.stringify({
+      running: true, version: VERSION, pid: process.pid, uptime: Math.round(process.uptime()),
+      lanIP: lanIP(), ips, httpPort: HTTP_PORT, httpsPort: HTTPS_PORT, token: AUTH_TOKEN, hasCert, launchd,
+      phoneLinkHttp: 'http://' + lanIP() + ':' + HTTP_PORT + '/?t=' + AUTH_TOKEN,
+      phoneLinkHttps: 'https://' + lanIP() + ':' + HTTPS_PORT + '/?t=' + AUTH_TOKEN,
+      phoneLinkLocal: 'http://' + localName + ':' + HTTP_PORT + '/?t=' + AUTH_TOKEN,
+    }));
+  }
+  // 软重载（本机或带令牌）
+  if (req.method === 'POST' && url.pathname === '/api/reload') {
+    if (!isLocalhost(req) && !checkAuth(url, req)) { res.statusCode = 401; return res.end(JSON.stringify({ error: 'unauthorized' })); }
+    res.end(JSON.stringify({ ok: true, restarting: true }));
+    restartSelf();
+    return;
+  }
+  // 停止服务（仅本机；若由 launchd 管理则先卸载，否则仅退出）
+  if (req.method === 'POST' && url.pathname === '/api/stop') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+    try { require('child_process').execSync('launchctl unload "$HOME/Library/LaunchAgents/com.lobsterbrain.plist" 2>/dev/null'); } catch (e) {}
+    res.end(JSON.stringify({ ok: true, stopping: true }));
+    setTimeout(() => process.exit(0), 200);
+    return;
   }
   // ===== 访问控制：所有 /api/ 接口（非本机）必须携带有效令牌 =====
   if (url.pathname.startsWith('/api/')) {
@@ -1537,6 +1731,7 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
+  if (req.method === 'GET' && url.pathname === '/manage') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MANAGE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/api/tasks') return res.end(JSON.stringify(tasks.slice().reverse()));
   // LLM 配置
   if (req.method === 'GET' && url.pathname === '/api/llm-config') {
@@ -1670,25 +1865,12 @@ server.listen(HTTP_PORT, '0.0.0.0', () => {
   const ifaces = os.networkInterfaces();
   let lan = 'localhost';
   for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) lan = i.address;
-  console.log('龙虾脑 v3 已启动');
+  console.log('龙虾脑 v3.1 已启动');
   console.log('  手机端（文字输入）:  http://' + lan + ':' + HTTP_PORT);
-  // 尝试启动 HTTPS（语音输入需要安全上下文）
-  const certDir = path.join(__dirname, 'cert');
-  const certFile = path.join(certDir, 'cert.pem');
-  const keyFile = path.join(certDir, 'key.pem');
-  if (fs.existsSync(certFile) && fs.existsSync(keyFile)) {
-    try {
-      const sslOpts = { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) };
-      https.createServer(sslOpts, server.listeners('request')[0]).listen(HTTPS_PORT, '0.0.0.0', () => {
-        console.log('  手机端（语音输入）:  https://' + lan + ':' + HTTPS_PORT + '  ⚠ 首次打开需点「高级→继续」信任证书');
-        console.log('  本机 / 看板:         https://localhost:' + HTTPS_PORT + '/dashboard');
-      });
-    } catch (e) { console.log('  HTTPS 启动失败（不影响文字输入）:', e.message); }
-  } else {
-    console.log('  ⚠ 未找到 cert/ 证书，语音输入不可用。运行 openssl 生成证书后重启。');
-  }
+  startHttps();
   const cfg = llmConfig();
   console.log('  智能解析: ' + (cfg.enabled ? '大模型 (' + cfg.model + ')' : '增强规则引擎（未配置 LLM）'));
   console.log('  能力: search / play / open(应用/文件夹/网站) / rating / system(音量/截图/锁屏…) / note / type(应用内输入)');
+  console.log('  控制台: http://localhost:' + HTTP_PORT + '/manage  （开机自启 / 扫码连接 / 诊断）');
   console.log('  配置页: http://localhost:' + HTTP_PORT + '/config  （接入 LLM + 辅助功能权限）');
 });

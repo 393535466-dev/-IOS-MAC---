@@ -136,6 +136,22 @@ http://yangxuandeMacBook-Air.local:8787/?t=TOKEN    # 文字（HTTP）
 
 **运营看板**：`/dashboard` 含累计任务、成功率、平均耗时、近 7 日任务量、动作分布、任务明细，每 5 秒自动刷新。
 
+**常驻控制台 `/manage`（Mac 本机访问）**
+- 一个页面集中解决「用得上、打得开」：显示运行状态（版本 / PID / 运行时长 / 端口 / 令牌）、生成**扫码连接二维码**（手机相机一扫直达，已含令牌）、连接诊断（局域网 IP / 证书 / 辅助功能授权 / 开机自启是否启用）、一键重载与停止。
+- 二维码用的是固定的 `.local` 入口，IP 怎么变都能扫。二维码库 `public/qrcode.js` 是零依赖静态资源，运行时不需要 npm。
+
+**扫码连接**
+- 在 Mac 本机打开 `http://localhost:8787/manage`，用手机相机扫页面上的二维码即可把带令牌的链接加到主屏幕，免去手动复制粘贴。
+
+**开机自启（launchd，零依赖）**
+```bash
+bash bin/install-launchd.sh     # 安装：随 Mac 登录自动启动，崩溃后自动重启
+bash bin/uninstall-launchd.sh   # 卸载：停止并取消自启
+```
+- 安装后服务由系统（launchd）托管，不再需要每次双击 `start.command`；日志在 `logs/`。
+- 若通过 launchd 启动，请在「系统设置 → 隐私与安全性 → 辅助功能」中授权给 **node 可执行文件本身**（路径见 `logs/launchd.out.log` 首行或 `which node`），而不是终端——因为此时进程不再隶属于终端。
+- 代码更新后：launchd 模式下在 `/manage` 点「一键重载」即可；非 launchd 模式仍双击 `start.command` 重载。
+
 **接入大模型（可选）**：配置 LLM 后，模糊自然语言走大模型解析；未配置则降级规则引擎，开箱即用。
 ```bash
 export LLM_BASE_URL=https://api.example.com/v1

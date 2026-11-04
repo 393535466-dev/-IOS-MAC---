@@ -1,6 +1,9 @@
 # 运行时数据（自动生成）
 tasks.json
 
+# launchd 日志
+logs/
+
 # macOS
 .DS_Store
 
