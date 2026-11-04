@@ -128,7 +128,32 @@ node app.js
 - **跳回顶端**：日志函数里的 `scrollIntoView()` 会在每次触控板操作时把页面滚回顶部，已移除；控制面板改为 `sticky` 常驻，滑动时 `preventDefault` 阻止页面滚动。
 - **链接 IP 不一致**：`lanIP()` 现优先取 `192.168.x` 网段，避免误取 Docker / 虚拟网卡地址（如 `172.19.0.1`）。
 
-> 设计说明：旧版曾使用 `body{position:fixed;inset:0}` + `visualViewport` 键盘补偿 + `dvh` 单位，在部分 iOS Safari 上会导致触控板高度塌陷、交互层被裁出视口，表现为"界面显示正常但点哪都没反应"。新版只在顶部控制区使用 `sticky`，不含全屏 `fixed` 布局与全屏遮罩。若语音按钮显示"语音需 HTTPS"，点一下会自动切到 `:8788`（首次需信任证书）。
+> 设计说明：旧版曾使用 `body{position:fixed;inset:0}` + `visualViewport` 键盘补偿 + `dvh` 单位，在部分 iOS Safari 上会导致触控板高度塌陷、交互层被裁出视口，表现为"界面显示正常但点哪都没反应"。新版只在顶部控制区使用 `sticky`，不含全屏 `fixed` 布局与全屏遮罩。
+
+**应用智能（3.3）**
+
+不再靠硬编码字典猜应用名，改为**扫描本机真实安装的应用**：
+
+- 启动时扫描 `/Applications`、`~/Applications`、`/System/Applications` 等目录，读 `Info.plist` 生成 `installed-apps.json`（本机实测 97 个应用，含 `CFBundleName` / `CFBundleDisplayName` / `BundleId` / 图标文件）。
+- 解析时把「飞书」「Feishu」等都映射到**真实 `.app` 完整路径**，用 `open "<路径>"` 打开，绕开 `open -a` 名称匹配的坑。例：飞书实际是 `Lark.app`（`CFBundleName=Feishu`），字典里的 `Feishu` 过去打不开，现在可以。
+- 字典里**没有**的应用也能直接打开（如「打开 Antigravity」会自动找到 `/Applications/Antigravity.app`）。
+- **未安装时智能兜底**：「打开抖音」→ 自动打开抖音网页版并明确说明「本机未安装」；无网页版时给出本机相似应用建议，而不是冷冰冰报「执行失败」。
+- `GET /api/apps` 返回本机应用清单与**按使用频率推荐**的快捷应用（越用越准）；`GET /api/app-icon?p=` 用系统自带 `sips` 输出**真实 App 图标**；`POST /api/apps/refresh` 重新扫描。
+- 可在 `quick-apps.json` 自定义置顶应用，如 `["微信","飞书","WorkBuddy"]`（该文件不提交，每台 Mac 独立）。
+
+**手机语音控制电脑（三条路径）**
+
+| 路径 | 怎么用 | 门槛 |
+|------|--------|------|
+| ① 键盘听写（推荐） | HTTP 下点紫色圆球 → 唤起输入框 → 点 iOS 键盘上的麦克风说话 → 点发送 | 零配置、零证书、零权限，系统级中文识别 |
+| ② 按住说话 | 用 `https://<主机名>.local:8788`（需先信任证书），按住圆球说话、松开自动执行 | 需 HTTPS + 证书，浏览器 `SpeechRecognition` |
+| ③ 语音播报 | 执行结果由 `speechSynthesis` 读回，形成「说话 → Mac 执行 → 手机回读」闭环 | 语音区可一键开关 |
+
+> 为什么把键盘听写作为主力：iOS Safari 的网页语音识别支持**不一致**，且强制要求 HTTPS + 麦克风权限；键盘听写由系统提供，任何网络环境下都稳定可用。网页识别作为增强，不可用时会自动提示降级。
+
+**主屏 App 化**：页面已带 `apple-mobile-web-app-capable` 等 meta 与 `public/icon.png`，在 Safari 里「添加到主屏幕」后全屏运行、有独立图标，像原生 App 一样一键唤起。
+
+**演练模式**：`LB_DRY_RUN=1 node app.js` 会走完整解析与执行流程但不真的操控 Mac，用于自测与演示（默认关闭）。
 
 **HTTPS 证书与固定入口（IP 会变，建议一次配好）**
 

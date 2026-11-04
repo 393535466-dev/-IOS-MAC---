@@ -1,6 +1,11 @@
 <!-- 龙虾脑手机页：与服务端 MINI_PAGE 同步，走 /public/* 实时读盘，无需重载服务 -->
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="龙虾脑">
+<link rel="apple-touch-icon" href="/public/icon.png">
 <title>龙虾脑</title>
 <script>try{var _t=localStorage.getItem('lb_theme');if(_t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <style>
@@ -40,6 +45,9 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
 .orb-btn.rec{transform:scale(1.07)}
 .orb-btn.off{filter:grayscale(.45);opacity:.8}
 .voice-tip{font-size:11px;color:var(--muted);text-align:center;line-height:1.5;min-height:16px}
+.voice-links{display:flex;gap:16px;justify-content:center;align-items:center}
+.voice-alt{font-size:11px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:0;font-family:inherit;cursor:pointer}
+.app .ic img{width:100%;height:100%;object-fit:cover;border-radius:14px;display:block}
 .strip{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -14px;padding:2px 14px 6px}
 .strip::-webkit-scrollbar{display:none}
 .app{flex:0 0 auto;width:66px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
@@ -79,6 +87,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
     <div class="voice">
       <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
       <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+      <div class="voice-links">
+        <a class="voice-alt" id="voiceAlt" href="#">切换语音方式</a>
+        <button class="voice-alt" id="speakBtn" type="button">播报开</button>
+      </div>
     </div>
 
     <div class="strip" id="apps"></div>
@@ -122,8 +134,8 @@ async function poll(id, label){
     await new Promise(function(r){setTimeout(r,350);});
     var t;
     try{ var r = await api('/api/task/'+id); if(!r.ok) break; t = await r.json(); }catch(e){ break; }
-    if(t.status==='success'){ log('✓ '+(t.result||'已完成'), 'ok'); return; }
-    if(t.status==='failed'){ log('✗ '+(t.error||'执行失败'), 'err'); return; }
+    if(t.status==='success'){ log('✓ '+(t.result||'已完成'), 'ok'); if(window.lbSpeak) window.lbSpeak(t.result||'已完成'); return; }
+    if(t.status==='failed'){ log('✗ '+(t.error||'执行失败'), 'err'); if(window.lbSpeak) window.lbSpeak('执行失败：'+(t.error||'')); return; }
   }
   log('… 仍在执行：'+label);
 }
@@ -141,7 +153,7 @@ async function sendTask(text){
 $('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); });
 $('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); } });
 
-var APPS = [
+var BUILTIN_APPS = [
   {n:'微信', k:'打开微信', c:'#07C160', s:'<svg viewBox="0 0 24 24"><path d="M9.2 3C5.1 3 1.8 5.8 1.8 9.3c0 2 1.1 3.8 2.9 5L3.8 16.5l2.4-1.2c.9.3 1.9.4 3 .4h.6a5.6 5.6 0 0 1-.2-1.5c0-3.4 3.2-6.1 7.2-6.1h.6C16.8 4.7 13.4 3 9.2 3zM6.7 7.9a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/><path d="M22.2 13.9c0-3-2.9-5.4-6.5-5.4s-6.5 2.4-6.5 5.4 2.9 5.4 6.5 5.4c.8 0 1.6-.1 2.3-.4l2 1-.5-1.8c1.6-1 2.7-2.5 2.7-4.2zm-8.8-.9a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6zm4.6 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/></svg>'},
   {n:'豆包', k:'打开豆包', c:'#5B6CF5', s:'<svg viewBox="0 0 24 24"><path d="M12 2c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6z"/><path d="M18.5 13c.3 2.2 1.2 3.1 3.5 3.5-2.3.3-3.2 1.2-3.5 3.5-.3-2.3-1.2-3.2-3.5-3.5 2.3-.4 3.2-1.3 3.5-3.5z" opacity=".85"/></svg>'},
   {n:'抖音', k:'打开抖音', c:'#161823', s:'<svg viewBox="0 0 24 24"><path d="M16.6 2h-3v13.1a2.9 2.9 0 1 1-2.3-2.8V9.2a5.9 5.9 0 1 0 5.3 5.9V8.4a6.4 6.4 0 0 0 3.7 1.2V6.6a3.7 3.7 0 0 1-3.7-3.7V2z"/></svg>'},
@@ -151,13 +163,29 @@ var APPS = [
   {n:'B站', k:'打开哔哩哔哩', c:'#FB7299', s:'<svg viewBox="0 0 24 24"><path d="M6.3 2.6l2.5 2.4h6.4l2.5-2.4a1 1 0 0 1 1.4 1.4l-1.5 1.5H18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h-.6L3.9 4a1 1 0 0 1 1.4-1.4zM8.5 10.6a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2zm7 0a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2z"/></svg>'},
   {n:'网易云', k:'打开网易云音乐', c:'#E03A3A', s:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm3.9 8.1c-.2 2-1.7 3.4-3.5 4.4-1.2.7-2.5 1.3-2.9 2.6-.3 1 .2 2.1 1.3 2.1 1.3 0 2-1.4 1.7-2.6a1.4 1.4 0 0 1 2.7-.7c.5 2.3-1.1 4.6-3.6 4.9-2.7.3-5-1.9-4.6-4.6.4-2.6 2.4-3.7 4.3-4.9 1.5-.9 2.4-1.6 2.5-3 .1-1-.7-1.8-1.7-1.7-1 .1-1.7.9-1.9 1.8a1.4 1.4 0 0 1-2.7-.5c.4-2.5 2.6-4.3 5.1-4.1 2.5.2 4.1 2.1 3.8 4.3z"/></svg>'}
 ];
-var appsEl = $('apps');
-APPS.forEach(function(a){
-  var b = document.createElement('div'); b.className='app';
-  b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.s+'</div><div class="lb">'+a.n+'</div>';
-  b.addEventListener('click', function(){ sendTask(a.k); });
-  appsEl.appendChild(b);
-});
+/* 快捷应用：优先显示 Mac 上真实安装的应用 + 真实图标；接口不可用时回退内置图标 */
+function renderApps(list){
+  var el = $('apps'); el.innerHTML='';
+  list.forEach(function(a){
+    var b=document.createElement('div'); b.className='app';
+    var ic=document.createElement('div'); ic.className='ic';
+    ic.style.background = a.color || a.c || '#8a8a90';
+    if(a.icon){
+      var img=document.createElement('img'); img.src=a.icon; img.alt='';
+      img.onerror=function(){ if(img.parentNode) img.parentNode.removeChild(img); ic.textContent=(a.label||a.n||'?').slice(0,1); ic.style.color='#fff'; ic.style.fontSize='22px'; ic.style.fontWeight='700'; };
+      ic.appendChild(img);
+    } else if(a.s){ ic.style.background=a.c; ic.innerHTML=a.s; }
+    else { ic.textContent=(a.label||a.n||'?').slice(0,1); ic.style.color='#fff'; ic.style.fontSize='22px'; }
+    var lb=document.createElement('div'); lb.className='lb'; lb.textContent=a.label||a.n||a.name;
+    b.appendChild(ic); b.appendChild(lb);
+    b.addEventListener('click', function(){ sendTask(a.cmd||a.k||('打开'+a.name)); });
+    el.appendChild(b);
+  });
+}
+renderApps(BUILTIN_APPS);
+api('/api/apps').then(function(r){ return r.json(); }).then(function(d){
+  if(d && d.quick && d.quick.length) renderApps(d.quick);
+}).catch(function(){});
 
 var CHIPS = ['关闭当前应用','最小化窗口','切换全屏','锁屏','截个屏','刷新','下一首','复制'];
 var chipsEl = $('chips');
@@ -221,18 +249,52 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
 (function(){
   var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  /* 结果播报：说话下指令 → Mac 执行 → 手机读回结果，形成「对讲机」闭环 */
+  function speak(text){
+    try{
+      if(localStorage.getItem('lb_speak')==='off') return;
+      if(!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(String(text||'').slice(0,90));
+      u.lang='zh-CN'; u.rate=1.05;
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  window.lbSpeak = speak;
+  function keyboardDictation(){
+    $('cmd').focus();
+    tip.textContent = '点键盘上的麦克风说话，说完点发送';
+    log('已唤起输入框，点键盘上的麦克风说话');
+  }
+  var speakBtn = $('speakBtn');
+  function syncSpeakBtn(){ speakBtn.textContent = localStorage.getItem('lb_speak')==='off' ? '播报关' : '播报开'; }
+  syncSpeakBtn();
+  speakBtn.addEventListener('click', function(){
+    var wasOff = localStorage.getItem('lb_speak')==='off';
+    try{ localStorage.setItem('lb_speak', wasOff ? 'on' : 'off'); }catch(e){}
+    syncSpeakBtn();
+    if(wasOff) speak('语音播报已开启');
+    else try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+  });
   function httpsUrl(){
     return 'https://' + location.hostname + ':8788' + location.pathname + (location.search || '');
   }
   if(!window.isSecureContext || !SR){
-    btn.classList.add('off');
-    tip.textContent = '语音需 HTTPS，点圆球切到 :8788';
-    btn.addEventListener('click', function(){
+    // HTTP 或浏览器不支持网页语音识别：圆球改为一键唤起 iOS 键盘听写
+    // 系统级中文听写，零证书、零权限、零配置，任何网络下都能「说话控制电脑」
+    tip.textContent = '点圆球说话（用键盘听写，零配置）';
+    $('voiceAlt').textContent = '切到 HTTPS 按住说话 →';
+    $('voiceAlt').addEventListener('click', function(e){
+      e.preventDefault();
       log('正在切换到 HTTPS 语音入口…');
-      setTimeout(function(){ location.href = httpsUrl(); }, 350);
+      setTimeout(function(){ location.href = httpsUrl(); }, 300);
     });
+    btn.addEventListener('click', function(){ keyboardDictation(); });
     return;
   }
+  // HTTPS + 浏览器支持识别：按住说话；键盘听写始终作为备选
+  $('voiceAlt').textContent = '或用键盘听写';
+  $('voiceAlt').addEventListener('click', function(e){ e.preventDefault(); keyboardDictation(); });
   function startRec(){
     if(recognizing) return;
     finalText = '';
@@ -246,9 +308,9 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
       };
       rec.onerror = function(ev){
         var m = ev.error || '';
-        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，请在系统设置中允许';
+        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
         else if(m === 'no-speech') tip.textContent = '没听到，按住再试一次';
-        else tip.textContent = '语音错误：' + m;
+        else tip.textContent = '识别不可用（'+m+'），请改用键盘听写';
       };
       rec.onend = function(){
         recognizing = false; btn.classList.remove('rec'); rec = null;

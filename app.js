@@ -27,7 +27,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
-const { execSync } = require('child_process');
+const { execSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
 // ---- 鼠标控制（手机触控板 → 远程控制 Mac 光标）----
 const MOUSECTL = path.join(__dirname, 'bin', 'mousectl.py');
@@ -46,7 +46,7 @@ function initMouse() {
 initMouse();
 
 const PORT = process.env.PORT || 8787;
-const VERSION = '3.2.0';
+const VERSION = '3.3.0';
 const DATA_FILE = path.join(__dirname, 'tasks.json');
 const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封神第二部', '沙丘2', '奥本海默', '碟中谍8', '雄狮少年2'];
 
@@ -271,6 +271,162 @@ function detectSite(text) {
   for (const p in SITES) if (SITES[p].keys.some(k => lower.includes(k))) return p;
   return null;
 }
+/* ---------------- 本机应用自发现：不再靠硬编码字典猜应用名 ----------------
+ * 扫描 /Applications 等目录，读 Info.plist 拿到真实的 CFBundleName / DisplayName /
+ * BundleId / 图标文件；解析时把「飞书」「Feishu」等都映射到真实 .app 路径，
+ * 直接用 open "<完整路径>" 打开，绕开 open -a 名称匹配的坑。 */
+const APP_CACHE = path.join(__dirname, 'installed-apps.json');
+const QUICK_APPS_FILE = path.join(__dirname, 'quick-apps.json');
+const ICON_DIR = path.join(__dirname, 'public', 'icons');
+let INSTALLED_APPS = [];
+let APP_INDEX = new Map();
+
+// 本机没装时的智能兜底：自动打开网页版，而不是冷冰冰报「执行失败」
+const WEB_FALLBACK = [
+  { keys: ['抖音', 'douyin', 'tiktok'], label: '抖音网页版', url: 'https://www.douyin.com' },
+  { keys: ['快手', 'kuaishou'], label: '快手网页版', url: 'https://www.kuaishou.com' },
+  { keys: ['哔哩哔哩', 'bilibili', 'b站'], label: 'B站网页版', url: 'https://www.bilibili.com' },
+  { keys: ['小红书', 'xiaohongshu'], label: '小红书网页版', url: 'https://www.xiaohongshu.com' },
+  { keys: ['微博', 'weibo'], label: '微博网页版', url: 'https://weibo.com' },
+  { keys: ['知乎', 'zhihu'], label: '知乎网页版', url: 'https://www.zhihu.com' },
+  { keys: ['淘宝', 'taobao'], label: '淘宝网页版', url: 'https://www.taobao.com' },
+  { keys: ['京东', 'jd.com'], label: '京东网页版', url: 'https://www.jd.com' },
+  { keys: ['腾讯视频', 'v.qq'], label: '腾讯视频网页版', url: 'https://v.qq.com' },
+  { keys: ['爱奇艺', 'iqiyi'], label: '爱奇艺网页版', url: 'https://www.iqiyi.com' },
+  { keys: ['优酷', 'youku'], label: '优酷网页版', url: 'https://www.youku.com' },
+  { keys: ['网易云音乐', 'neteasemusic', 'music.163'], label: '网易云音乐网页版', url: 'https://music.163.com' },
+  { keys: ['qq音乐', 'qqmusic'], label: 'QQ音乐网页版', url: 'https://y.qq.com' },
+  { keys: ['飞书', 'feishu', 'lark'], label: '飞书网页版', url: 'https://www.feishu.cn' },
+  { keys: ['钉钉', 'dingtalk'], label: '钉钉网页版', url: 'https://www.dingtalk.com' },
+];
+const PREFERRED_APPS = ['微信', '豆包', 'WorkBuddy', '浏览器', '飞书', '备忘录', 'B站', '网易云音乐', 'Cursor', 'Obsidian', 'Kimi', '元宝'];
+
+function normAppKey(s) {
+  return String(s || '').toLowerCase().replace(/\.app$/, '').replace(/[\s_\-·.]/g, '');
+}
+function buildAppIndex() {
+  APP_INDEX = new Map();
+  for (const a of INSTALLED_APPS) for (const k of (a.keys || [])) if (k && !APP_INDEX.has(k)) APP_INDEX.set(k, a);
+}
+function appEntryFromPath(appPath) {
+  const base = path.basename(appPath, '.app');
+  let info = {};
+  try {
+    const out = execFileSync('plutil', ['-convert', 'json', '-o', '-', path.join(appPath, 'Contents', 'Info.plist')], { encoding: 'utf8', timeout: 2500, maxBuffer: 2e6 });
+    info = JSON.parse(out);
+  } catch (e) {}
+  const bundleName = info.CFBundleName || '';
+  const displayName = info.CFBundleDisplayName || '';
+  const bundleId = info.CFBundleIdentifier || '';
+  const iconFile = info.CFBundleIconFile || 'AppIcon.icns';
+  const name = displayName || bundleName || base;
+  const keys = [base, bundleName, displayName, bundleId, name].map(normAppKey).filter(Boolean);
+  return { name, base, path: appPath, bundleName, displayName, bundleId, iconFile, keys,
+    searchText: [base, bundleName, displayName, bundleId].join(' ').toLowerCase() };
+}
+function scanInstalledApps() {
+  const dirs = ['/Applications', path.join(os.homedir(), 'Applications'), '/System/Applications',
+    '/Applications/Utilities', '/System/Applications/Utilities'];
+  const seen = new Set(), list = [];
+  for (const dir of dirs) {
+    let names = [];
+    try { names = fs.readdirSync(dir).filter(n => n.endsWith('.app')); } catch (e) { continue; }
+    for (const n of names) {
+      const p = path.join(dir, n);
+      if (seen.has(p)) continue;
+      seen.add(p);
+      try { list.push(appEntryFromPath(p)); } catch (e) {}
+    }
+  }
+  INSTALLED_APPS = list;
+  buildAppIndex();
+  try { fs.writeFileSync(APP_CACHE, JSON.stringify(list, null, 2)); } catch (e) {}
+  return list;
+}
+function loadAppCache() {
+  try {
+    const j = JSON.parse(fs.readFileSync(APP_CACHE, 'utf8'));
+    if (Array.isArray(j) && j.length) { INSTALLED_APPS = j; buildAppIndex(); }
+  } catch (e) {}
+}
+function findInstalledApp(name) {
+  if (!name || !INSTALLED_APPS.length) return null;
+  const q = normAppKey(name);
+  if (!q) return null;
+  if (APP_INDEX.has(q)) return APP_INDEX.get(q);
+  let best = null, bestLen = Infinity;
+  for (const a of INSTALLED_APPS) for (const k of a.keys) {
+    if (k.length >= 3 && (k.includes(q) || q.includes(k)) && k.length < bestLen) { best = a; bestLen = k.length; }
+  }
+  return best;
+}
+// 任意写法 → 本机真实存在的应用。精确匹配优先，避免「浏览器」被模糊到「豆包工作浏览器」
+function resolveAppEntry(name) {
+  if (!name) return null;
+  const dict = APPS[name] || APPS[String(name).toLowerCase()];
+  if (dict) { const hit = APP_INDEX.get(normAppKey(dict)); if (hit) return hit; }   // 飞书→Feishu、浏览器→Safari
+  const self = APP_INDEX.get(normAppKey(name)); if (self) return self;              // 真实应用名/中文名直接命中
+  if (dict) { const hit = findInstalledApp(dict); if (hit) return hit; }
+  return findInstalledApp(name);
+}
+const CN_LABEL = {
+  WeChat: '微信', Lark: '飞书', Feishu: '飞书', DoubaoWork: '豆包', Notes: '备忘录', Music: '音乐',
+  Safari: '浏览器', Finder: '访达', Photos: '照片', Mail: '邮件', Calendar: '日历', Maps: '地图',
+  Terminal: '终端', Reminders: '提醒事项', Contacts: '通讯录', 'Google Chrome': '浏览器',
+  'Visual Studio Code': 'VS Code', WorkBuddy: 'WorkBuddy', Cursor: 'Cursor', Obsidian: 'Obsidian'
+};
+function cnAppLabel(a) {
+  if (CN_LABEL[a.base]) return CN_LABEL[a.base];
+  for (const k in APPS) if (APPS[k] === a.base && /[\u4e00-\u9fa5]/.test(k)) return k;
+  return a.name;
+}
+function findWebFallback(it) {
+  const hay = [it.target, it.app, it.raw].filter(Boolean).join(' ').toLowerCase();
+  return WEB_FALLBACK.find(w => w.keys.some(k => hay.includes(k.toLowerCase()))) || null;
+}
+function similarApps(name, n) {
+  const q = String(name || '').toLowerCase();
+  const chars = [...new Set(q.replace(/[^a-z0-9\u4e00-\u9fa5]/g, '').split(''))];
+  if (!chars.length) return [];
+  return INSTALLED_APPS
+    .map(a => ({ a, s: chars.reduce((s, c) => s + (a.searchText.includes(c) ? 1 : 0), 0) }))
+    .filter(x => x.s > 0).sort((x, y) => y.s - x.s || x.a.name.length - y.a.name.length)
+    .slice(0, n || 3).map(x => x.a.name);
+}
+function appUsageStats() {
+  const m = {};
+  try {
+    for (const t of tasks) {
+      const mm = /^打开\s*(.+?)\s*$/.exec(String(t.instruction || ''));
+      if (mm && t.status === 'success') m[mm[1]] = (m[mm[1]] || 0) + 1;
+    }
+  } catch (e) {}
+  return m;
+}
+function toClientApp(a) {
+  return {
+    id: a.bundleId || a.base, name: a.name, base: a.base, path: a.path,
+    label: (() => { const s = cnAppLabel(a); return s.length > 8 ? s.slice(0, 7) + '…' : s; })(),
+    cmd: '打开' + a.base,
+    icon: '/api/app-icon?p=' + encodeURIComponent(a.path),
+    color: '#' + crypto.createHash('md5').update(a.name).digest('hex').slice(0, 6)
+  };
+}
+function pickQuickApps() {
+  const usage = appUsageStats();
+  const byUsage = Object.keys(usage).sort((a, b) => usage[b] - usage[a]);
+  let pinned = [];
+  try { pinned = JSON.parse(fs.readFileSync(QUICK_APPS_FILE, 'utf8')); } catch (e) {}
+  if (!Array.isArray(pinned)) pinned = [];
+  const chosen = [], seen = new Set();
+  for (const key of pinned.concat(byUsage, PREFERRED_APPS)) {
+    const e = resolveAppEntry(key);
+    if (e && !seen.has(e.path)) { seen.add(e.path); chosen.push(e); }
+    if (chosen.length >= 10) break;
+  }
+  return chosen;
+}
+
 function detectApp(text) {
   const lower = text.toLowerCase();
   // 按 key 长度从长到短匹配，避免短词(如"浏览器")抢先匹配长词(如"谷歌浏览器")
@@ -281,6 +437,9 @@ function detectApp(text) {
 // 把 LLM / 用户输入的中文或各种写法统一映射成系统能识别的应用名（如 微信→WeChat、备忘录→Notes）
 function resolveApp(name) {
   if (!name) return name;
+  // 优先用本机真实安装的应用名（如「飞书」→ Lark），字典只作为兜底
+  const hit = resolveAppEntry(name);
+  if (hit) return hit.base;
   if (APPS[name]) return APPS[name];
   const low = String(name).toLowerCase();
   if (APPS[low]) return APPS[low];
@@ -628,6 +787,14 @@ async function normalizeInstruction(text) {
 /* ---------------- 执行引擎 ---------------- */
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sh = (cmd) => new Promise((res, rej) => {
+  // LB_DRY_RUN=1 用于自测/演示：走完整流程但不真的操控 Mac，默认关闭
+  if (process.env.LB_DRY_RUN) {
+    console.log('[dry-run] ' + cmd);
+    // 模拟真实行为：open -a 找不到应用时应失败，以便验证「未安装 → 网页版」回退
+    const m = /^open -a "([^"]+)"/.exec(cmd);
+    if (m && !resolveAppEntry(m[1])) return rej(new Error('Unable to find application named ' + m[1]));
+    return res('dry-run');
+  }
   exec(cmd, { timeout: 9000 }, (err, stdout, stderr) => err ? rej(Object.assign(err, { stderr })) : res(stdout.trim()));
 });
 // AppleScript 键击：mod 为 'command' / 'command,shift' / 'control,command'；
@@ -878,7 +1045,30 @@ async function runTask(t) {
           execNote = result = `已向「${contact}」发送${it.appName || '微信'}：「${msg}」`;
         }
       } else if (it.action === 'open') {
-        if (it.sub === 'open_app') { await sh(`open -a "${resolveApp(it.app)}"`); execNote = result = '已打开应用：' + it.target; }
+        if (it.sub === 'open_app') {
+          // 1) 用自发现到的真实 .app 路径打开（最稳，绕开 open -a 名称匹配）
+          const hit = resolveAppEntry(it.app || it.target);
+          let done = false;
+          if (hit) {
+            try { await sh(`open "${hit.path}"`); done = true; execNote = result = '已打开应用：' + hit.name; } catch (e) {}
+          }
+          // 2) 退回字典名
+          if (!done) {
+            try { await sh(`open -a "${resolveApp(it.app)}"`); done = true; execNote = result = '已打开应用：' + it.target; } catch (e) {}
+          }
+          // 3) 仍未打开 → 智能兜底：网页版 / 相似应用建议，而不是干巴巴报失败
+          if (!done) {
+            const web = findWebFallback(it);
+            if (web) {
+              try { await sh(`open "${web.url}"`); execNote = result = `本机未安装「${it.target}」，已为你打开${web.label}`; }
+              catch (e) { execNote = result = `本机未安装「${it.target}」，网页版也未能打开`; }
+            } else {
+              const cands = similarApps(it.target || it.app);
+              execNote = result = `未找到应用「${it.target}」` +
+                (cands.length ? `。本机有：${cands.join('、')}，可以说「打开${cands[0]}」` : '，请先在 Mac 上安装后重试');
+            }
+          }
+        }
         else if (it.sub === 'open_folder') { await sh(`open ${it.folder}`); execNote = result = '已打开文件夹：' + it.target; }
         else if (it.sub === 'open_url') { await sh(`open "${it.url}"`); execNote = result = '已打开网址'; }
         else { await sh(`open "${SITES[it.platform].home}"`); execNote = result = '已打开 ' + SITES[it.platform].label + ' 首页'; }
@@ -1433,6 +1623,11 @@ window.addEventListener('focus', function(){ setTimeout(probe, 300); });
 /* ---------------- 全新极简手机入口 /m（每一步都显示结果/错误，独立于旧模板） ---------------- */
 const MINI_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="龙虾脑">
+<link rel="apple-touch-icon" href="/public/icon.png">
 <title>龙虾脑</title>
 <script>try{var _t=localStorage.getItem('lb_theme');if(_t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <style>
@@ -1472,6 +1667,9 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
 .orb-btn.rec{transform:scale(1.07)}
 .orb-btn.off{filter:grayscale(.45);opacity:.8}
 .voice-tip{font-size:11px;color:var(--muted);text-align:center;line-height:1.5;min-height:16px}
+.voice-links{display:flex;gap:16px;justify-content:center;align-items:center}
+.voice-alt{font-size:11px;color:var(--muted);text-decoration:underline;background:none;border:none;padding:0;font-family:inherit;cursor:pointer}
+.app .ic img{width:100%;height:100%;object-fit:cover;border-radius:14px;display:block}
 .strip{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -14px;padding:2px 14px 6px}
 .strip::-webkit-scrollbar{display:none}
 .app{flex:0 0 auto;width:66px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
@@ -1511,6 +1709,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
     <div class="voice">
       <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
       <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+      <div class="voice-links">
+        <a class="voice-alt" id="voiceAlt" href="#">切换语音方式</a>
+        <button class="voice-alt" id="speakBtn" type="button">播报开</button>
+      </div>
     </div>
 
     <div class="strip" id="apps"></div>
@@ -1554,8 +1756,8 @@ async function poll(id, label){
     await new Promise(function(r){setTimeout(r,350);});
     var t;
     try{ var r = await api('/api/task/'+id); if(!r.ok) break; t = await r.json(); }catch(e){ break; }
-    if(t.status==='success'){ log('✓ '+(t.result||'已完成'), 'ok'); return; }
-    if(t.status==='failed'){ log('✗ '+(t.error||'执行失败'), 'err'); return; }
+    if(t.status==='success'){ log('✓ '+(t.result||'已完成'), 'ok'); if(window.lbSpeak) window.lbSpeak(t.result||'已完成'); return; }
+    if(t.status==='failed'){ log('✗ '+(t.error||'执行失败'), 'err'); if(window.lbSpeak) window.lbSpeak('执行失败：'+(t.error||'')); return; }
   }
   log('… 仍在执行：'+label);
 }
@@ -1573,7 +1775,7 @@ async function sendTask(text){
 $('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); });
 $('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); } });
 
-var APPS = [
+var BUILTIN_APPS = [
   {n:'微信', k:'打开微信', c:'#07C160', s:'<svg viewBox="0 0 24 24"><path d="M9.2 3C5.1 3 1.8 5.8 1.8 9.3c0 2 1.1 3.8 2.9 5L3.8 16.5l2.4-1.2c.9.3 1.9.4 3 .4h.6a5.6 5.6 0 0 1-.2-1.5c0-3.4 3.2-6.1 7.2-6.1h.6C16.8 4.7 13.4 3 9.2 3zM6.7 7.9a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/><path d="M22.2 13.9c0-3-2.9-5.4-6.5-5.4s-6.5 2.4-6.5 5.4 2.9 5.4 6.5 5.4c.8 0 1.6-.1 2.3-.4l2 1-.5-1.8c1.6-1 2.7-2.5 2.7-4.2zm-8.8-.9a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6zm4.6 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/></svg>'},
   {n:'豆包', k:'打开豆包', c:'#5B6CF5', s:'<svg viewBox="0 0 24 24"><path d="M12 2c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6z"/><path d="M18.5 13c.3 2.2 1.2 3.1 3.5 3.5-2.3.3-3.2 1.2-3.5 3.5-.3-2.3-1.2-3.2-3.5-3.5 2.3-.4 3.2-1.3 3.5-3.5z" opacity=".85"/></svg>'},
   {n:'抖音', k:'打开抖音', c:'#161823', s:'<svg viewBox="0 0 24 24"><path d="M16.6 2h-3v13.1a2.9 2.9 0 1 1-2.3-2.8V9.2a5.9 5.9 0 1 0 5.3 5.9V8.4a6.4 6.4 0 0 0 3.7 1.2V6.6a3.7 3.7 0 0 1-3.7-3.7V2z"/></svg>'},
@@ -1583,13 +1785,29 @@ var APPS = [
   {n:'B站', k:'打开哔哩哔哩', c:'#FB7299', s:'<svg viewBox="0 0 24 24"><path d="M6.3 2.6l2.5 2.4h6.4l2.5-2.4a1 1 0 0 1 1.4 1.4l-1.5 1.5H18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h-.6L3.9 4a1 1 0 0 1 1.4-1.4zM8.5 10.6a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2zm7 0a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2z"/></svg>'},
   {n:'网易云', k:'打开网易云音乐', c:'#E03A3A', s:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm3.9 8.1c-.2 2-1.7 3.4-3.5 4.4-1.2.7-2.5 1.3-2.9 2.6-.3 1 .2 2.1 1.3 2.1 1.3 0 2-1.4 1.7-2.6a1.4 1.4 0 0 1 2.7-.7c.5 2.3-1.1 4.6-3.6 4.9-2.7.3-5-1.9-4.6-4.6.4-2.6 2.4-3.7 4.3-4.9 1.5-.9 2.4-1.6 2.5-3 .1-1-.7-1.8-1.7-1.7-1 .1-1.7.9-1.9 1.8a1.4 1.4 0 0 1-2.7-.5c.4-2.5 2.6-4.3 5.1-4.1 2.5.2 4.1 2.1 3.8 4.3z"/></svg>'}
 ];
-var appsEl = $('apps');
-APPS.forEach(function(a){
-  var b = document.createElement('div'); b.className='app';
-  b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.s+'</div><div class="lb">'+a.n+'</div>';
-  b.addEventListener('click', function(){ sendTask(a.k); });
-  appsEl.appendChild(b);
-});
+/* 快捷应用：优先显示 Mac 上真实安装的应用 + 真实图标；接口不可用时回退内置图标 */
+function renderApps(list){
+  var el = $('apps'); el.innerHTML='';
+  list.forEach(function(a){
+    var b=document.createElement('div'); b.className='app';
+    var ic=document.createElement('div'); ic.className='ic';
+    ic.style.background = a.color || a.c || '#8a8a90';
+    if(a.icon){
+      var img=document.createElement('img'); img.src=a.icon; img.alt='';
+      img.onerror=function(){ if(img.parentNode) img.parentNode.removeChild(img); ic.textContent=(a.label||a.n||'?').slice(0,1); ic.style.color='#fff'; ic.style.fontSize='22px'; ic.style.fontWeight='700'; };
+      ic.appendChild(img);
+    } else if(a.s){ ic.style.background=a.c; ic.innerHTML=a.s; }
+    else { ic.textContent=(a.label||a.n||'?').slice(0,1); ic.style.color='#fff'; ic.style.fontSize='22px'; }
+    var lb=document.createElement('div'); lb.className='lb'; lb.textContent=a.label||a.n||a.name;
+    b.appendChild(ic); b.appendChild(lb);
+    b.addEventListener('click', function(){ sendTask(a.cmd||a.k||('打开'+a.name)); });
+    el.appendChild(b);
+  });
+}
+renderApps(BUILTIN_APPS);
+api('/api/apps').then(function(r){ return r.json(); }).then(function(d){
+  if(d && d.quick && d.quick.length) renderApps(d.quick);
+}).catch(function(){});
 
 var CHIPS = ['关闭当前应用','最小化窗口','切换全屏','锁屏','截个屏','刷新','下一首','复制'];
 var chipsEl = $('chips');
@@ -1653,18 +1871,52 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
 (function(){
   var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  /* 结果播报：说话下指令 → Mac 执行 → 手机读回结果，形成「对讲机」闭环 */
+  function speak(text){
+    try{
+      if(localStorage.getItem('lb_speak')==='off') return;
+      if(!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(String(text||'').slice(0,90));
+      u.lang='zh-CN'; u.rate=1.05;
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  window.lbSpeak = speak;
+  function keyboardDictation(){
+    $('cmd').focus();
+    tip.textContent = '点键盘上的麦克风说话，说完点发送';
+    log('已唤起输入框，点键盘上的麦克风说话');
+  }
+  var speakBtn = $('speakBtn');
+  function syncSpeakBtn(){ speakBtn.textContent = localStorage.getItem('lb_speak')==='off' ? '播报关' : '播报开'; }
+  syncSpeakBtn();
+  speakBtn.addEventListener('click', function(){
+    var wasOff = localStorage.getItem('lb_speak')==='off';
+    try{ localStorage.setItem('lb_speak', wasOff ? 'on' : 'off'); }catch(e){}
+    syncSpeakBtn();
+    if(wasOff) speak('语音播报已开启');
+    else try{ window.speechSynthesis && window.speechSynthesis.cancel(); }catch(e){}
+  });
   function httpsUrl(){
     return 'https://' + location.hostname + ':8788' + location.pathname + (location.search || '');
   }
   if(!window.isSecureContext || !SR){
-    btn.classList.add('off');
-    tip.textContent = '语音需 HTTPS，点圆球切到 :8788';
-    btn.addEventListener('click', function(){
+    // HTTP 或浏览器不支持网页语音识别：圆球改为一键唤起 iOS 键盘听写
+    // 系统级中文听写，零证书、零权限、零配置，任何网络下都能「说话控制电脑」
+    tip.textContent = '点圆球说话（用键盘听写，零配置）';
+    $('voiceAlt').textContent = '切到 HTTPS 按住说话 →';
+    $('voiceAlt').addEventListener('click', function(e){
+      e.preventDefault();
       log('正在切换到 HTTPS 语音入口…');
-      setTimeout(function(){ location.href = httpsUrl(); }, 350);
+      setTimeout(function(){ location.href = httpsUrl(); }, 300);
     });
+    btn.addEventListener('click', function(){ keyboardDictation(); });
     return;
   }
+  // HTTPS + 浏览器支持识别：按住说话；键盘听写始终作为备选
+  $('voiceAlt').textContent = '或用键盘听写';
+  $('voiceAlt').addEventListener('click', function(e){ e.preventDefault(); keyboardDictation(); });
   function startRec(){
     if(recognizing) return;
     finalText = '';
@@ -1678,9 +1930,9 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
       };
       rec.onerror = function(ev){
         var m = ev.error || '';
-        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，请在系统设置中允许';
+        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
         else if(m === 'no-speech') tip.textContent = '没听到，按住再试一次';
-        else tip.textContent = '语音错误：' + m;
+        else tip.textContent = '识别不可用（'+m+'），请改用键盘听写';
       };
       rec.onend = function(){
         recognizing = false; btn.classList.remove('rec'); rec = null;
@@ -2188,9 +2440,12 @@ const server = http.createServer((req, res) => {
         : ext === '.css' ? 'text/css; charset=utf-8'
         : (ext === '.html' || ext === '.htm') ? 'text/html; charset=utf-8'
         : ext === '.svg' ? 'image/svg+xml'
+        : ext === '.png' ? 'image/png'
+        : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg'
         : 'application/octet-stream';
       res.setHeader('Content-Type', ct);
-      res.setHeader('Cache-Control', 'no-store');
+      // 页面不缓存（防手机吃旧版），图片/静态资源可缓存
+      res.setHeader('Cache-Control', /^\.(png|jpe?g|svg|css|js)$/.test(ext) ? 'public, max-age=3600' : 'no-store');
       return res.end(fs.readFileSync(f));
     }
     res.statusCode = 404; return res.end('not found');
@@ -2280,6 +2535,36 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
   if (req.method === 'GET' && url.pathname === '/manage') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MANAGE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/api/tasks') return res.end(JSON.stringify(tasks.slice().reverse()));
+  // 本机真实安装的应用清单（手机快捷应用由它动态生成）
+  if (req.method === 'GET' && url.pathname === '/api/apps') {
+    if (!INSTALLED_APPS.length) { try { scanInstalledApps(); } catch (e) {} }
+    const quick = pickQuickApps().map(toClientApp);
+    return res.end(JSON.stringify({ total: INSTALLED_APPS.length, quick, apps: INSTALLED_APPS.map(toClientApp) }));
+  }
+  if (req.method === 'POST' && url.pathname === '/api/apps/refresh') {
+    let list = [];
+    try { list = scanInstalledApps(); } catch (e) {}
+    return res.end(JSON.stringify({ ok: true, total: list.length }));
+  }
+  // 真实应用图标：按需用系统自带 sips 把 .icns 转成 png 并缓存（无需第三方依赖）
+  if (req.method === 'GET' && url.pathname === '/api/app-icon') {
+    const p = url.searchParams.get('p') || '';
+    const e = INSTALLED_APPS.find(a => a.path === p);
+    if (!e) { res.statusCode = 404; return res.end('not found'); }
+    try {
+      fs.mkdirSync(ICON_DIR, { recursive: true });
+      const out = path.join(ICON_DIR, crypto.createHash('md5').update(p).digest('hex') + '.png');
+      if (!fs.existsSync(out)) {
+        let ic = e.iconFile || 'AppIcon.icns';
+        if (!/\.icns$/i.test(ic)) ic += '.icns';
+        const src = path.join(e.path, 'Contents', 'Resources', ic);
+        execFileSync('sips', ['-s', 'format', 'png', src, '--out', out, '--resampleHeightWidth', '96', '96'], { timeout: 6000, stdio: 'ignore' });
+      }
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.end(fs.readFileSync(out));
+    } catch (err) { res.statusCode = 404; return res.end('no icon'); }
+  }
   // LLM 配置
   if (req.method === 'GET' && url.pathname === '/api/llm-config') {
     const cfg = llmConfig();
@@ -2408,12 +2693,17 @@ const server = http.createServer((req, res) => {
 
 load();
 loadAuth();
+loadAppCache();
+setTimeout(() => {
+  try { const n = scanInstalledApps(); console.log('[apps] 已发现本机应用 ' + n.length + ' 个'); }
+  catch (e) { console.log('[apps] 应用扫描失败:', e.message); }
+}, 600);
 const HTTP_PORT = PORT;
 const HTTPS_PORT = Number(PORT) + 1;
 // 用带重试的监听：软重载时新进程会与尚未退出的旧进程抢端口，需等待释放后重试
 listenWithRetry(server, HTTP_PORT, '0.0.0.0', '龙虾脑 HTTP', () => {
   const lan = lanIP();
-  console.log('龙虾脑 v3.2 已启动');
+  console.log('龙虾脑 v3.3 已启动');
   console.log('  手机端（文字输入）:  http://' + lan + ':' + HTTP_PORT);
   startHttps();
   const cfg = llmConfig();

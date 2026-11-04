@@ -121,7 +121,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td rowspan="4"><b>指令理解</b></td><td>自然语言解析</td><td>规则引擎优先，明确指令秒级；模糊指令回落可选 LLM</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>语音规范化</td><td>口语 → 清晰指令（去口水词、动词规范、片名补《》）</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>复合指令</td><td>「打开微信——输入你好」逐段执行</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td>应用名识别</td><td>长词优先匹配，中文名 → 真实应用名归一化</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>应用名识别</td><td>启动扫描本机 /Applications 等目录读 Info.plist（实测 97 个应用），中文名 / 字典别名 → 真实 .app 完整路径；字典里没有的应用也能直接打开</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="9"><b>Mac 操控</b></td><td>打开应用 / 文件 / 网址</td><td>open 动作，支持文件夹、网站、URL</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>任意应用自动输入</td><td>type：打开 → 粘贴，微信 / 豆包 / WorkBuddy / 浏览器等</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>系统操作</td><td>音量 ± / 静音 / 亮度 / 截图 / 锁屏 / 清废纸篓 / 系统设置</td><td class="ok">✅ 已实现</td></tr>
@@ -135,14 +135,18 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td>发短信</td><td>Messages，复用输入链路</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>鼠标控制</b></td><td>手机触控板</td><td>手机端触控板驱动 Mac 光标移动 / 点击（CoreGraphics，零依赖）；面板为 flex 固定首块 + visualViewport 补偿，软键盘弹出也不被顶出屏幕</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>鼠标控制</b></td><td>滚轮滚动</td><td>触控板旁滚轮条上下滑动 / ▲▼ 单步按钮，驱动 Mac 页面滚动（CGEventCreateScrollWheelEvent，按行）</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td><b>语音输入</b></td><td>按住说话</td><td>Web Speech API，需 HTTPS(8788)，实时「正在听」反馈</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="3"><b>语音输入</b></td><td>键盘听写（零配置）</td><td>HTTP 下点圆球唤起输入框，用 iOS 系统键盘听写说话 → 文字指令 → 发送；无需 HTTPS / 证书 / 麦克风权限</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>按住说话</td><td>HTTPS(8788) + 已信任证书下走 Web Speech API，按住说、松开执行；识别不可用时自动提示降级键盘听写</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>语音播报</td><td>执行结果经 speechSynthesis 读回，形成「说话 → Mac 执行 → 手机回读」的对讲机闭环，可一键开关</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="2"><b>安全</b></td><td>令牌鉴权</td><td>局域网须带令牌 / 自定义密码，本机 localhost 免验证</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>本地运行</td><td>服务运行于 Mac 本机，不部署 Vercel</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="2"><b>可观测</b></td><td>状态回传</td><td>四阶段时间轴（解析 → 规划 → 执行 → 回传）+ 可视化</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>运营看板</td><td>/dashboard：成功率、平均耗时、近 7 日柱状图、明细</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td><b>快捷入口</b></td><td>常用 App 图标</td><td>点图标直接打开微信 / 豆包 / 抖音 / WorkBuddy / 浏览器 / 备忘录 / B站 / 网易云音乐，并让下一条输入直输（发完自动复原）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="2"><b>快捷入口</b></td><td>动态真实应用</td><td>GET /api/apps 按本机真实安装 + 使用频率生成快捷应用（越用越准），GET /api/app-icon 用系统 sips 输出真实 App 图标；横向滑动，可用 quick-apps.json 自定义置顶</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>主屏 App 化</td><td>apple-mobile-web-app-capable + public/icon.png，添加到主屏后全屏运行、独立图标一键唤起</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>指令理解</b></td><td>直输模式</td><td>输入 / 语音原样填写到 Mac 当前应用输入框，跳过意图解析与口语规范化；默认仅对下一条生效（发完自动回指令模式），明确指令自动识别并逃逸，另有「指令：」「原文：」强制通道与逃生词，不自动发送</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>安全</b></td><td>HTTPS 证书与固定入口</td><td>自签证书含 .local 域名 + 新旧 IP 的 SAN、CA:TRUE / serverAuth；/cert.crt 供手机安装为受信任根证书，IP 变化不影响固定入口</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>智能兜底</b></td><td>未安装应用自动回退</td><td>「打开抖音」本机没装 → 自动打开抖音网页版并说明「本机未安装」；无网页版时给出本机相似应用建议，不再冷冰冰报「执行失败」</td><td class="ok">✅ 已实现</td></tr>
   </table>
   <p style="margin-top:10px;font-size:13px;color:#888780">辅助功能：自动输入 / 鼠标点击依赖 macOS「辅助功能」授权，需在系统设置中授权运行 <code>node app.js</code> 的程序（终端 / VS Code / WorkBuddy 等）。</p>
 </section>
@@ -187,7 +191,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
   <div class="road">
     <div class="phase"><div class="p-dot">1</div><div class="p-body">
       <h3>跑通闭环 <span class="tag">已完成</span></h3>
-      <p>单设备「手机 → Mac → 手机」完整体验与数据链路已打通：自然语言 / 语音 / 触控板三种输入，打开应用、自动输入、发微信、系统操作、搜索等多类执行器，四阶段状态回传 + 运营看板。已交付：Demo + 看板 + 本方案。</p>
+      <p>单设备「手机 → Mac → 手机」完整体验与数据链路已打通：自然语言 / 语音 / 触控板三种输入，打开应用、自动输入、发微信、系统操作、搜索等多类执行器，四阶段状态回传 + 运营看板。已交付：Demo + 看板 + 本方案。<b>3.3 已完成从 MVP 到产品的关键包装</b>：本机应用自发现 + 真实图标、三条语音路径与结果播报、未安装应用智能兜底、主屏 App 化。</p>
     </div></div>
     <div class="phase"><div class="p-dot">2</div><div class="p-body">
       <h3>更聪明、更稳 <span class="tag">1-2 周</span></h3>

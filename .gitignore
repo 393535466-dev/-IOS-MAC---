@@ -29,3 +29,8 @@ llm-config.json
 
 # 访问令牌（含局域网口令，不提交）
 auth.json
+
+# 本机应用清单与图标缓存（每台 Mac 不同，自动生成）
+installed-apps.json
+quick-apps.json
+public/icons/
