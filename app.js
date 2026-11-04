@@ -1432,43 +1432,69 @@ window.addEventListener('focus', function(){ setTimeout(probe, 300); });
 const MINI_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <title>龙虾脑·遥控</title>
+<script>try{var _t=localStorage.getItem('lb_theme');if(_t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <style>
+  :root{--bg:#f2f3f5;--card:#fff;--fg:#1a1a1a;--muted:#999;--line:#e5e5e5;--sub:#fafafa;--chip:#fff;--chipfg:#333;--input:#fff;--accent:#1a1a1a;--accentfg:#fff;--logbg:#fff;--hint:#aaa}
+  [data-theme="dark"]{--bg:#121214;--card:#1e1e21;--fg:#f2f2f4;--muted:#8a8a90;--line:#35353b;--sub:#26262b;--chip:#26262b;--chipfg:#e6e6e8;--input:#26262b;--accent:#f2f2f4;--accentfg:#121214;--logbg:#26262b;--hint:#6f6f76}
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;background:#f2f3f5;color:#1a1a1a;padding:10px 12px 28px}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);padding:10px 12px 28px}
   .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
   .top h1{font-size:16px;margin:0;font-weight:700}
-  .conn{font-size:12px;padding:3px 9px;border-radius:12px;background:#eee;color:#888}
+  .top-r{display:flex;align-items:center;gap:8px}
+  .tbtn{font-size:12px;padding:4px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
+  .conn{font-size:12px;padding:4px 9px;border-radius:12px;background:var(--sub);color:var(--muted)}
   .conn.ok{background:#e6f7ee;color:#0a8a4a}
   .conn.err{background:#fdecea;color:#c0392b}
-  .log{display:none;margin:0 0 10px;padding:9px 11px;border-radius:9px;font-size:13px;line-height:1.45;word-break:break-all;background:#fff;border:1px solid #e5e5e5}
-  .log.ok{border-color:#b7e4c7}
-  .log.err{border-color:#f1b0a8;background:#fff6f5}
-  .box{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-  .box .t{font-size:12px;color:#999;margin-bottom:9px}
+  .log{display:none;margin:0 0 10px;padding:9px 11px;border-radius:9px;font-size:13px;line-height:1.45;word-break:break-all;background:var(--logbg);border:1px solid var(--line)}
+  .log.ok{border-color:#4caf7d}
+  .log.err{border-color:#e08a80}
+  .box{background:var(--card);border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
+  .box .t{font-size:12px;color:var(--muted);margin-bottom:9px}
   .row{display:flex;gap:8px}
-  .row input{flex:1;border:1px solid #ddd;border-radius:9px;padding:11px 12px;font-size:15px;outline:none}
-  .row input:focus{border-color:#1a1a1a}
-  .send{background:#1a1a1a;color:#fff;border:none;border-radius:9px;padding:0 18px;font-size:15px;font-weight:600}
+  .row input{flex:1;min-width:0;background:var(--input);color:var(--fg);border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-size:15px;outline:none}
+  .row input:focus{border-color:var(--fg)}
+  .send{background:var(--accent);color:var(--accentfg);border:none;border-radius:9px;padding:0 18px;font-size:15px;font-weight:600;flex-shrink:0}
   .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-  .app{display:flex;flex-direction:column;align-items:center;gap:5px;background:#fafafa;border:1px solid #eee;border-radius:11px;padding:10px 4px;cursor:pointer}
-  .app:active{background:#f0f0f0}
-  .app .ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;font-weight:700}
-  .app .lb{font-size:11px;color:#555}
+  .app{display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--sub);border:1px solid var(--line);border-radius:11px;padding:10px 4px;cursor:pointer}
+  .app:active{opacity:.7}
+  .app .ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center}
+  .app .ic svg{width:25px;height:25px;fill:#fff;display:block}
+  .app .lb{font-size:11px;color:var(--fg)}
   .chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{border:1px solid #e2e2e2;background:#fff;border-radius:999px;padding:7px 13px;font-size:13px;color:#333;cursor:pointer}
-  .chip:active{background:#f0f0f0}
-  .pad{height:200px;background:linear-gradient(135deg,#2b2b2b,#3a3a3a);border-radius:12px;touch-action:none;position:relative;overflow:hidden;color:#777;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .chip{border:1px solid var(--line);background:var(--chip);color:var(--chipfg);border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer}
+  .chip:active{opacity:.7}
+  .pad{height:190px;background:linear-gradient(135deg,#2b2b2b,#3a3a3a);border-radius:12px;touch-action:none;position:relative;overflow:hidden;color:#999;display:flex;align-items:center;justify-content:center;font-size:12px}
   .scrollwrap{display:flex;gap:10px;align-items:stretch}
   .wheel{flex:1;background:linear-gradient(180deg,#e9e9e9,#dcdcdc);border-radius:10px;height:120px;touch-action:none;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px}
+  [data-theme="dark"] .wheel{background:linear-gradient(180deg,#303036,#26262b);color:#8a8a90}
   .wbts{display:flex;flex-direction:column;gap:8px;justify-content:center}
-  .wbt{width:54px;height:54px;border-radius:10px;border:1px solid #ddd;background:#fff;font-size:20px;color:#555}
-  .wbt:active{background:#1a1a1a;color:#fff}
-  .hint{font-size:11px;color:#aaa;text-align:center;margin-top:14px;line-height:1.6}
+  .wbt{width:54px;height:54px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:20px}
+  .wbt:active{opacity:.7}
+  .hint{font-size:11px;color:var(--hint);text-align:center;margin-top:14px;line-height:1.6}
+  .voice-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;padding:4px 0 2px}
+  .orb-btn{width:78px;height:78px;border-radius:50%;border:none;position:relative;overflow:hidden;cursor:pointer;-webkit-user-select:none;user-select:none;
+    background:radial-gradient(circle at 34% 26%, #cba9ff 0%, #9568f6 28%, #6f3ad8 60%, #3a1a90 100%);
+    box-shadow:0 9px 24px rgba(109,59,214,.42), inset -6px -9px 17px rgba(0,0,0,.3), inset 5px 6px 14px rgba(255,255,255,.35)}
+  .orb-btn::after{content:'';position:absolute;top:9px;left:18px;width:34px;height:19px;border-radius:50%;background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.85), rgba(255,255,255,0) 70%);pointer-events:none}
+  .orb-bars{position:relative;z-index:1;display:flex;gap:6px;align-items:center;justify-content:center;height:100%}
+  .orb-bars i{display:block;width:6px;height:23px;border-radius:6px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7)}
+  .orb-bars i:nth-child(2){height:31px}
+  .orb-btn.rec{transform:scale(1.07)}
+  .orb-btn.off{filter:grayscale(.5);opacity:.75}
+  .voice-tip{font-size:11px;color:var(--muted);text-align:center;line-height:1.5}
 </style>
 </head>
 <body>
-  <div class="top"><h1>龙虾脑 · 遥控</h1><div id="conn" class="conn">连接中…</div></div>
+  <div class="top"><h1>龙虾脑 · 遥控</h1><div class="top-r"><button class="tbtn" id="themeBtn" type="button">深色</button><div id="conn" class="conn">连接中…</div></div></div>
   <div id="log" class="log"></div>
+
+  <div class="box">
+    <div class="t">语音指令</div>
+    <div class="voice-wrap">
+      <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
+      <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+    </div>
+  </div>
 
   <div class="box">
     <div class="t">文字指令</div>
@@ -1542,19 +1568,19 @@ $('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('
 $('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; } });
 
 var APPS = [
-  {n:'微信', c:'#07C160', g:'微'},
-  {n:'豆包', c:'#5B6CF5', g:'豆'},
-  {n:'抖音', c:'#161823', g:'抖'},
-  {n:'WorkBuddy', c:'#FF5900', g:'W'},
-  {n:'浏览器', c:'#1E9BF0', g:'S'},
-  {n:'备忘录', c:'#F5A623', g:'备'},
-  {n:'B站', c:'#FB7299', g:'B'},
-  {n:'网易云', c:'#E03A3A', g:'音'}
+  {n:'微信', c:'#07C160', s:'<svg viewBox="0 0 24 24"><path d="M9.2 3C5.1 3 1.8 5.8 1.8 9.3c0 2 1.1 3.8 2.9 5L3.8 16.5l2.4-1.2c.9.3 1.9.4 3 .4h.6a5.6 5.6 0 0 1-.2-1.5c0-3.4 3.2-6.1 7.2-6.1h.6C16.8 4.7 13.4 3 9.2 3zM6.7 7.9a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/><path d="M22.2 13.9c0-3-2.9-5.4-6.5-5.4s-6.5 2.4-6.5 5.4 2.9 5.4 6.5 5.4c.8 0 1.6-.1 2.3-.4l2 1-.5-1.8c1.6-1 2.7-2.5 2.7-4.2zm-8.8-.9a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6zm4.6 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/></svg>'},
+  {n:'豆包', c:'#5B6CF5', s:'<svg viewBox="0 0 24 24"><path d="M12 2c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6z"/><path d="M18.5 13c.3 2.2 1.2 3.1 3.5 3.5-2.3.3-3.2 1.2-3.5 3.5-.3-2.3-1.2-3.2-3.5-3.5 2.3-.4 3.2-1.3 3.5-3.5z" opacity=".85"/></svg>'},
+  {n:'抖音', c:'#161823', s:'<svg viewBox="0 0 24 24"><path d="M16.6 2h-3v13.1a2.9 2.9 0 1 1-2.3-2.8V9.2a5.9 5.9 0 1 0 5.3 5.9V8.4a6.4 6.4 0 0 0 3.7 1.2V6.6a3.7 3.7 0 0 1-3.7-3.7V2z"/></svg>'},
+  {n:'WorkBuddy', c:'#FF5900', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><circle cx="12" cy="10" r="2.1" fill="#FF5900"/></svg>'},
+  {n:'浏览器', c:'#1E9BF0', s:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1 5.1-2.1z"/><circle cx="12" cy="12" r="1.2" fill="#1E9BF0"/></svg>'},
+  {n:'备忘录', c:'#F5A623', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16v18H4z" opacity=".25"/><path d="M4 3h16v4H4z"/><path d="M7 10h10v1.6H7zm0 3.4h10v1.6H7zm0 3.4h7v1.6H7z" opacity=".95"/></svg>'},
+  {n:'B站', c:'#FB7299', s:'<svg viewBox="0 0 24 24"><path d="M6.3 2.6l2.5 2.4h6.4l2.5-2.4a1 1 0 0 1 1.4 1.4l-1.5 1.5H18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h-.6L3.9 4a1 1 0 0 1 1.4-1.4zM8.5 10.6a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2zm7 0a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2z"/></svg>'},
+  {n:'网易云', c:'#E03A3A', s:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm3.9 8.1c-.2 2-1.7 3.4-3.5 4.4-1.2.7-2.5 1.3-2.9 2.6-.3 1 .2 2.1 1.3 2.1 1.3 0 2-1.4 1.7-2.6a1.4 1.4 0 0 1 2.7-.7c.5 2.3-1.1 4.6-3.6 4.9-2.7.3-5-1.9-4.6-4.6.4-2.6 2.4-3.7 4.3-4.9 1.5-.9 2.4-1.6 2.5-3 .1-1-.7-1.8-1.7-1.7-1 .1-1.7.9-1.9 1.8a1.4 1.4 0 0 1-2.7-.5c.4-2.5 2.6-4.3 5.1-4.1 2.5.2 4.1 2.1 3.8 4.3z"/></svg>'}
 ];
 var appsEl = $('apps');
 APPS.forEach(function(a){
   var b = document.createElement('div'); b.className='app';
-  b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.g+'</div><div class="lb">'+a.n+'</div>';
+  b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.s+'</div><div class="lb">'+a.n+'</div>';
   b.addEventListener('click', function(){ sendTask('打开'+a.n); });
   appsEl.appendChild(b);
 });
@@ -1603,7 +1629,71 @@ function scrollBy(n){ api('/api/mouse', {scroll:n}); }
 $('sup').addEventListener('click', function(){ scrollBy(4); });
 $('sdown').addEventListener('click', function(){ scrollBy(-4); });
 
+/* ---- 主题开关 ---- */
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme', t);
+  $('themeBtn').textContent = (t === 'dark') ? '浅色' : '深色';
+  try{ localStorage.setItem('lb_theme', t); }catch(e){}
+}
+applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+$('themeBtn').addEventListener('click', function(){
+  applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+});
+
+/* ---- 语音：按住说话 ---- */
+(function(){
+  var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  function httpsUrl(){
+    var h = location.hostname || location.host.split(':')[0];
+    return 'https://' + h + ':8788' + location.pathname + (location.search || '');
+  }
+  if(!window.isSecureContext || !SR){
+    btn.classList.add('off');
+    tip.textContent = '语音需 HTTPS：点此切换到 :8788（首次需信任证书）';
+    btn.addEventListener('click', function(){
+      log('正在切换到 HTTPS 语音入口…');
+      setTimeout(function(){ location.href = httpsUrl(); }, 350);
+    });
+    return;
+  }
+  function startRec(){
+    if(recognizing) return;
+    finalText = '';
+    try{
+      rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = false;
+      rec.onresult = function(ev){
+        var s = '';
+        for(var i=0;i<ev.results.length;i++) s += ev.results[i][0].transcript;
+        tip.textContent = '识别中：' + s;
+        if(ev.results[ev.results.length-1].isFinal) finalText = s.trim();
+      };
+      rec.onerror = function(ev){
+        var m = ev.error || '';
+        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，请在系统设置中允许';
+        else if(m === 'no-speech') tip.textContent = '没听到，按住再试一次';
+        else tip.textContent = '语音错误：' + m;
+      };
+      rec.onend = function(){
+        recognizing = false; btn.classList.remove('rec'); rec = null;
+        if(finalText){ sendTask(finalText); finalText = ''; }
+        else if(tip.textContent.indexOf('权限') < 0 && tip.textContent.indexOf('语音错误') < 0) tip.textContent = '按住说出指令，松开自动执行';
+      };
+      rec.start(); recognizing = true; btn.classList.add('rec'); tip.textContent = '聆听中…';
+    }catch(e){ tip.textContent = '启动失败：' + e.message; }
+  }
+  function stopRec(){ if(rec && recognizing){ try{ rec.stop(); }catch(e){} } }
+  btn.addEventListener('touchstart', function(e){ e.preventDefault(); startRec(); }, {passive:false});
+  btn.addEventListener('touchend', function(e){ e.preventDefault(); stopRec(); }, {passive:false});
+  btn.addEventListener('touchcancel', function(){ stopRec(); });
+  btn.addEventListener('mousedown', function(e){ e.preventDefault(); startRec(); });
+  btn.addEventListener('mouseup', function(e){ e.preventDefault(); stopRec(); });
+  btn.addEventListener('mouseleave', function(){ stopRec(); });
+})();
+
 checkConn();
+setInterval(checkConn, 8000);
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) checkConn(); });
 </script>
 </body></html>`;
 
@@ -2085,7 +2175,11 @@ const server = http.createServer((req, res) => {
     const f = path.join(base, url.pathname.replace(/^\/public\//, ''));
     if (f.startsWith(base) && fs.existsSync(f) && fs.statSync(f).isFile()) {
       const ext = path.extname(f).toLowerCase();
-      const ct = ext === '.js' ? 'text/javascript; charset=utf-8' : ext === '.css' ? 'text/css; charset=utf-8' : 'application/octet-stream';
+      const ct = ext === '.js' ? 'text/javascript; charset=utf-8'
+        : ext === '.css' ? 'text/css; charset=utf-8'
+        : (ext === '.html' || ext === '.htm') ? 'text/html; charset=utf-8'
+        : ext === '.svg' ? 'image/svg+xml'
+        : 'application/octet-stream';
       res.setHeader('Content-Type', ct);
       res.setHeader('Cache-Control', 'no-store');
       return res.end(fs.readFileSync(f));
@@ -2167,8 +2261,12 @@ const server = http.createServer((req, res) => {
       return;
     }
   }
-  if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
-  if (req.method === 'GET' && url.pathname === '/m') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MINI_PAGE); }
+  // 手机主入口：干净重写的页面（无 fixed/dvh/visualViewport，避免 iOS Safari 交互层塌陷）
+  if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/m' || url.pathname === '/index.html')) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MINI_PAGE);
+  }
+  // 旧版界面保留，供对比/回退
+  if (req.method === 'GET' && url.pathname === '/old') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
   if (req.method === 'GET' && url.pathname === '/manage') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MANAGE_PAGE); }
@@ -2301,7 +2399,8 @@ load();
 loadAuth();
 const HTTP_PORT = PORT;
 const HTTPS_PORT = Number(PORT) + 1;
-server.listen(HTTP_PORT, '0.0.0.0', () => {
+// 用带重试的监听：软重载时新进程会与尚未退出的旧进程抢端口，需等待释放后重试
+listenWithRetry(server, HTTP_PORT, '0.0.0.0', '龙虾脑 HTTP', () => {
   const ifaces = os.networkInterfaces();
   let lan = 'localhost';
   for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) lan = i.address;
