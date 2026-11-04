@@ -1,4 +1,3 @@
-<!-- 龙虾脑手机页：与服务端 MINI_PAGE 同步，走 /public/* 实时读盘，无需重载服务 -->
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -86,7 +85,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
   <div class="main">
     <div class="voice">
       <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
-      <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+      <div class="voice-tip" id="voiceTip">短按说话，说完自动执行；长按说完松手</div>
       <div class="voice-links">
         <a class="voice-alt" id="voiceAlt" href="#">切换语音方式</a>
         <button class="voice-alt" id="speakBtn" type="button">播报开</button>
@@ -147,7 +146,9 @@ async function sendTask(text){
     var r = await api('/api/task', {instruction:text});
     var j = await r.json().catch(function(){return {};});
     if(!r.ok || !j.id){ log('✗ 发送失败 '+r.status, 'err'); return; }
-    poll(j.id, text);
+    // 服务端会把「关必 / 关 / 把它关了」理解成规范指令，回显出来让用户看得见、可纠正
+    if(j.normalized && j.normalized !== text) log('理解成：'+j.normalized);
+    poll(j.id, j.normalized || text);
   }catch(e){ log('✗ 网络错误：'+e.message, 'err'); }
 }
 $('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); });
@@ -247,7 +248,8 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
 
 /* 语音：按住说话 */
 (function(){
-  var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
+  var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false;
+  var finalParts = [], interimText = '', pressStart = 0, tapMode = false, gotError = '', suppressClick = false;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   /* 结果播报：说话下指令 → Mac 执行 → 手机读回结果，形成「对讲机」闭环 */
   function speak(text){
@@ -283,7 +285,7 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
     // HTTP 或浏览器不支持网页语音识别：圆球改为一键唤起 iOS 键盘听写
     // 系统级中文听写，零证书、零权限、零配置，任何网络下都能「说话控制电脑」
     tip.textContent = '点圆球说话（用键盘听写，零配置）';
-    $('voiceAlt').textContent = '切到 HTTPS 按住说话 →';
+    $('voiceAlt').textContent = '切到 HTTPS 语音入口 →';
     $('voiceAlt').addEventListener('click', function(e){
       e.preventDefault();
       log('正在切换到 HTTPS 语音入口…');
@@ -295,38 +297,85 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
   // HTTPS + 浏览器支持识别：按住说话；键盘听写始终作为备选
   $('voiceAlt').textContent = '或用键盘听写';
   $('voiceAlt').addEventListener('click', function(e){ e.preventDefault(); keyboardDictation(); });
+  /* 短词「关闭」只有两三个字：按住说话时手指一松就 stop()，iOS Safari 往往
+   * 还没来得及把结果标成 isFinal，旧逻辑 finalText 为空 → 静默什么都不做。
+   * 现在：① 每次 onresult 重建完整 final 文本，不依赖「最后一个 result 是否 final」；
+   *      ② interim 也作为兜底；③ 短按不打断，交给识别引擎自动收尾；
+   *      ④ 无结果时明确提示 + 一键降级键盘听写，不再「看起来点了没反应」。 */
+  function cleanHeard(s){
+    return String(s||'').replace(/[。．.!！?？,，、;；…~～\s]+$/g,'')
+      .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g,'$1$2').trim();
+  }
+  function finishHeard(){
+    var heard = cleanHeard(finalParts.join('') || interimText);
+    if(heard){
+      tip.textContent = '听到：' + heard + ' → 执行中';
+      $('cmd').value = heard;   // 留在输入框：识别错了可直接改写重发
+      log('听到：' + heard);
+      finalParts = []; interimText = '';
+      sendTask(heard);
+    }else{
+      tip.textContent = gotError === 'no-speech'
+        ? '没听清，短按圆球再说一次（或用键盘听写）'
+        : '没收到指令，短按圆球再说一次（或用键盘听写）';
+      $('voiceAlt').textContent = '改用键盘听写';
+      log('语音没拾取到内容，可重说或用键盘听写', 'err');
+    }
+  }
   function startRec(){
     if(recognizing) return;
-    finalText = '';
+    finalParts = []; interimText = ''; gotError = '';
     try{
       rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = false;
       rec.onresult = function(ev){
-        var s = '';
-        for(var i=0;i<ev.results.length;i++) s += ev.results[i][0].transcript;
-        tip.textContent = '识别中：' + s;
-        if(ev.results[ev.results.length-1].isFinal) finalText = s.trim();
+        var finals = '', interim = '';
+        for(var i=0;i<ev.results.length;i++){
+          var r = ev.results[i], t = (r[0] && r[0].transcript) || '';
+          if(r.isFinal) finals += t; else interim += t;
+        }
+        finalParts = [finals];   // 每次重建，避免同一段 final 被重复累加
+        interimText = interim;
+        tip.textContent = '识别中：' + cleanHeard(finals + interim);
       };
       rec.onerror = function(ev){
-        var m = ev.error || '';
-        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
-        else if(m === 'no-speech') tip.textContent = '没听到，按住再试一次';
-        else tip.textContent = '识别不可用（'+m+'），请改用键盘听写';
+        gotError = ev.error || '';
+        if(gotError === 'not-allowed' || gotError === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
+        else if(gotError === 'no-speech') tip.textContent = '没听到，再说一次或稍等自动收尾';
+        else tip.textContent = '识别不可用（'+gotError+'），请改用键盘听写';
       };
       rec.onend = function(){
-        recognizing = false; btn.classList.remove('rec'); rec = null;
-        if(finalText){ sendTask(finalText); finalText = ''; }
-        else if(tip.textContent.indexOf('权限') < 0 && tip.textContent.indexOf('语音错误') < 0) tip.textContent = '按住说出指令，松开自动执行';
+        recognizing = false; btn.classList.remove('rec'); rec = null; tapMode = false;
+        finishHeard();
       };
-      rec.start(); recognizing = true; btn.classList.add('rec'); tip.textContent = '聆听中…';
-    }catch(e){ tip.textContent = '启动失败：' + e.message; }
+      rec.start(); recognizing = true; btn.classList.add('rec');
+      tip.textContent = '聆听中…说完自动结束';
+    }catch(e){ tip.textContent = '启动失败：' + e.message; recognizing = false; btn.classList.remove('rec'); }
   }
   function stopRec(){ if(rec && recognizing){ try{ rec.stop(); }catch(e){} } }
-  btn.addEventListener('touchstart', function(e){ e.preventDefault(); startRec(); }, {passive:false});
-  btn.addEventListener('touchend', function(e){ e.preventDefault(); stopRec(); }, {passive:false});
+  function pressDown(e){ if(e && e.preventDefault) e.preventDefault(); pressStart = Date.now(); tapMode = false; startRec(); }
+  function pressUp(e){
+    if(e && e.preventDefault) e.preventDefault();
+    suppressClick = true; setTimeout(function(){ suppressClick = false; }, 550);
+    if(Date.now() - pressStart < 400 && recognizing){
+      // 短按 = 自由聆听：不 stop，等识别引擎判定说完；再点一下可提前结束
+      tapMode = true;
+      tip.textContent = '正在听…说完自动结束，再点一下可提前结束';
+      return;
+    }
+    stopRec();
+  }
+  btn.addEventListener('touchstart', pressDown, {passive:false});
+  btn.addEventListener('touchend', pressUp, {passive:false});
   btn.addEventListener('touchcancel', function(){ stopRec(); });
-  btn.addEventListener('mousedown', function(e){ e.preventDefault(); startRec(); });
-  btn.addEventListener('mouseup', function(e){ e.preventDefault(); stopRec(); });
-  btn.addEventListener('mouseleave', function(){ stopRec(); });
+  btn.addEventListener('mousedown', function(e){ pressDown(e); });
+  btn.addEventListener('mouseup', function(e){ pressUp(e); });
+  btn.addEventListener('mouseleave', function(){ if(!tapMode) stopRec(); });
+  btn.addEventListener('click', function(e){
+    e.preventDefault();
+    if(suppressClick) return;              // 忽略 touchend/mouseup 带来的合成 click
+    if(recognizing && tapMode) stopRec();  // 自由聆听中：再点一下提前结束
+    else if(!recognizing) startRec();      // 桌面单击也能直接开始听
+  });
 })();
 
 checkConn();

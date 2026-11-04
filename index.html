@@ -351,7 +351,7 @@
       <div class="cap">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke-linecap="round"/></svg>
         <h3>语音输入</h3>
-        <p>按住说话，实时「正在听」反馈（HTTPS 下可用）。</p>
+        <p>短按说话 / 长按松手，实时「正在听」反馈与结果回显（HTTPS 下可用）。</p>
       </div>
       <div class="cap">
         <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 12h4l3 8 4-16 3 8h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -490,7 +490,7 @@
         <div class="ustep"><div class="n">1</div><div><h4>启动服务</h4><p>终端运行 <code>node app.js</code>，或直接双击 <code>start.command</code>（用「终端」启动，确保辅助功能授权对象明确）。启动后终端会打印手机端地址。</p></div></div>
         <div class="ustep"><div class="n">2</div><div><h4>首次配置向导</h4><p>首次使用请在 Mac 本机打开 <code>http://localhost:8787/setup</code>：六步向导会实时体检，依次配好开机自启、辅助功能授权、固定 <code>.local</code> 入口、HTTPS 证书与语音，最后做解析演练和真机试跑。IP 变了也能自检重签，不用重新摸索。</p></div></div>
         <div class="ustep"><div class="n">3</div><div><h4>授权辅助功能</h4><p>自动输入 / 点击依赖 macOS「辅助功能」权限。在 <code>系统设置 → 隐私与安全性 → 辅助功能</code> 开启运行 node 的程序，并完全退出重开。未授权时手机端会显示醒目引导，而非静默失败。</p></div></div>
-        <div class="ustep"><div class="n">4</div><div><h4>发指令 / 看数据</h4><p>手机输入框打字，或按住说话用语音说一句话；状态实时回传。看板 <code>/dashboard</code> 含成功率、耗时与明细，每 5 秒刷新。</p></div></div>
+        <div class="ustep"><div class="n">4</div><div><h4>发指令 / 看数据</h4><p>手机输入框打字，或短按紫色圆球用语音说一句话（键盘听写也可，零配置）；听到的原话会回显，识别错了可改写重发。状态实时回传。看板 <code>/dashboard</code> 含成功率、耗时与明细，每 5 秒刷新。</p></div></div>
       </div>
       <div>
         <div class="code">

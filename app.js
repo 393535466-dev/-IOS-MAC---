@@ -46,7 +46,7 @@ function initMouse() {
 initMouse();
 
 const PORT = process.env.PORT || 8787;
-const VERSION = '3.4.0';
+const VERSION = '3.5.0';
 const DATA_FILE = path.join(__dirname, 'tasks.json');
 const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封神第二部', '沙丘2', '奥本海默', '碟中谍8', '雄狮少年2'];
 
@@ -464,10 +464,12 @@ function detectSystem(text) {
 /* ---------------- 指令检测：关闭 / 窗口 / 媒体 / 编辑 ---------------- */
 // 关闭类：退出当前应用 / 退出指定应用 / 关闭窗口 / 关闭标签页
 function detectClose(text) {
-  const verb = /(关闭|关掉|关了|退出|quit|exit|close|结束|停掉|杀掉)/;
+  // 单字「关」与语音同音词也收进来：sanitizeSpeech 会先规范，这里是给「直输逃逸」等
+  // 直接调 localParse 的路径兜底。刻意不收裸「退」，否则「后退/退回一步」会被误判。
+  const verb = /(关闭|关掉|关了|关上|退出|退掉|quit|exit|close|结束|停掉|杀掉|干掉|不要了|guan\s*bi|^关(?![注于系心键照怀闭掉了上门灯]))/i;
   if (!verb.test(text) || /全屏|最大化|最小化|隐藏/.test(text)) return null;
   // 明确"退出应用"
-  if (/退出应用|退出程序|退出整个应用|关闭应用|关掉应用|退出当前应用/.test(text)) return { sub: 'quit_front' };
+  if (/(?:退出|关闭|结束|关掉)(?:当前|整个)?(?:应用|程序|软件|app)|退出应用|退出程序|关闭应用|关掉应用|退出当前应用|结束进程|杀进程/i.test(text)) return { sub: 'quit_front' };
   const app = detectApp(text);
   // 指定应用 + 关闭/退出（无窗口/标签页限定词）→ 退出该应用
   if (app && !/(窗口|标签页|网页|标签|这个页)/.test(text)) {
@@ -694,7 +696,9 @@ function commandEscape(raw) {
   if (!s || s.length > 60 || !ESCAPE_CMD_RE.test(s)) return null;
   const p = localParse(s);
   if (!p || p.lowConfidence || !p.action || p.action === 'type') return null;
-  if (p.action !== 'system' && !p.target) return null;
+  // close/window/media/edit/system 天生没有 target（退出前台应用、最小化窗口…）。
+  // 旧逻辑一律要求 target，导致直输模式下说「关闭」被当成文字填进输入框 —— 这里放行。
+  if (!['system', 'close', 'window', 'media', 'edit'].includes(p.action) && !p.target) return null;
   return p;
 }
 
@@ -736,6 +740,59 @@ function describeIntent(it) {
   }
 }
 
+/* ---------------- 语音指令净化（ASR 短词 / 同音错字 / 标点 / 指代） ----------------
+ * 只作用于「指令」链路；原文直输 direct 必须逐字保留，绝不经过这里。
+ * 起因：手机说「关闭」「关闭微信」经常没反应，除了识别层掐断，还有三类文本问题：
+ *   ① iOS 听写把「关闭」听成「关必/关毕/关闭昂」，句尾带「。」；
+ *   ② 口语只说一个「关」字，规则引擎的动词表命不中；
+ *   ③ 「关 闭」「关微信」这类断词/省略，detectClose 认不出。
+ * 统一在入口净化，键盘听写、网页识别、手打文字三条链路共用，不改动执行引擎。 */
+let lastAppContext = '';   // 最近一次指令涉及的真实应用名，供「把它关了」这类指代使用
+
+// 整句精确别名：只在这些「没有宾语」的裸动词上补全，避免误伤搜索关键词
+const SPEECH_BARE_ALIAS = {
+  '关': '关闭', '关了': '关闭', '关掉': '关闭', '关上': '关闭', '关一下': '关闭',
+  '关闭一下': '关闭', '关闭它': '关闭', '关掉它': '关闭', '关了它': '关闭',
+  '把它关了': '关闭', '把它关掉': '关闭', '把它关闭': '关闭', '关了吧': '关闭',
+  '退': '退出', '退出去': '退出', '退掉': '退出', '退出它': '退出', '退了吧': '退出',
+  '结束它': '关闭', '杀掉它': '关闭', '退粗': '退出',
+  '关必': '关闭', '关毕': '关闭', 'guanbi': '关闭',
+};
+// ASR 高频同音错字：只修句首动作词，绝不碰后面的搜索词
+const SPEECH_TYPO_RE = /^(?:guan\s*bi|关必|关毕|关璧|关币|关碧|关臂|观必|观毕|官必|关闭昂|关必昂|关掉昂|关掉啊|关闭啊|退出啊|退出昂|退粗)/i;
+// 必须带明确指代词才启用上下文，否则裸「关闭」会被误替换成「关闭微信」
+const SPEECH_CONTEXT_CLOSE = /^(?:把它关了|把它关掉|把它关闭|把它退出|把它给关了|把这个关了|把那个关了|关掉它|关闭它|退出它|关了它|结束它|刚才那个关掉|刚才的关掉|再关一次|再关一遍|又关一次|关掉刚才那个|关闭刚才那个)$/;
+const SPEECH_CONTEXT_OPEN = /^(?:打开它|再打开|再开一次|打开刚才那个|打开刚才的)$/;
+
+function sanitizeSpeech(text) {
+  const original = String(text == null ? '' : text).trim();
+  let s = original;
+  if (!s) return s;
+  // ① 句尾语气标点（只去尾部，保留「原文:」「——」等中间结构）
+  s = s.replace(/[。．.!！?？,，、;；…~～\s]+$/g, '')
+       .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g, '$1$2'); // 「关 闭」→「关闭」
+  // ② 同音错字 → 规范动词
+  s = s.replace(SPEECH_TYPO_RE, m => /退/.test(m) ? '退出' : '关闭');
+  // ③ 裸动词别名（整句精确匹配，最安全）
+  if (SPEECH_BARE_ALIAS[s]) return SPEECH_BARE_ALIAS[s];
+  // ④ 「关微信」补成「关闭微信」，但避开「关注/关于/关系/关心/关键…」等正常词
+  if (/^关(?!注|于|系|心|键|照|怀|闭|掉|了|上|门|灯)/.test(s)) s = '关闭' + s.slice(1);
+  return s || original;
+}
+function resolveContextRef(text) {
+  const s = String(text || '').trim();
+  if (!lastAppContext) return s;
+  if (SPEECH_CONTEXT_CLOSE.test(s)) return '关闭' + lastAppContext;
+  if (SPEECH_CONTEXT_OPEN.test(s)) return '打开' + lastAppContext;
+  return s;
+}
+function rememberAppContext(text) {
+  try {
+    const it = localParse(text);
+    if (it && !it.lowConfidence && it.appName) lastAppContext = it.appName;
+  } catch (e) { /* 上下文只是增强，失败不影响主流程 */ }
+}
+
 /* ---------------- 语音指令规范化（口语 → 清晰自然语言指令） ---------------- */
 function normalizeSpeech(text) {
   let s = (text || '').trim();
@@ -761,6 +818,15 @@ function normalizeSpeech(text) {
 }
 
 async function normalizeInstruction(text) {
+  const cleaned = sanitizeSpeech(text);
+  // 明确的系统短指令直接返回，绝不过 LLM。
+  // 实测 LLM 会把单字「关」幻觉成「打开《关》」（把指令当影片名），短指令交给规则引擎更准更快。
+  if (cleaned.length <= 12) {
+    try {
+      const it = localParse(cleaned);
+      if (it && !it.lowConfidence && ['close', 'window', 'media', 'edit', 'system'].includes(it.action)) return cleaned;
+    } catch (e) { /* 继续走 LLM */ }
+  }
   // 配置了 LLM 时，用大模型把口语改写为简洁指令；否则本地规则规范化
   const cfg = llmConfig();
   if (cfg.enabled) {
@@ -772,16 +838,17 @@ async function normalizeInstruction(text) {
           model: cfg.model, temperature: 0.2,
           messages: [
             { role: 'system', content: '把用户语音识别出的口语改写为一句简洁、规范的中文指令：去掉口水词(那个/呃/嗯/就是/然后/一下)，影片名用书名号《》，动词明确(搜索/播放/打开/查评分)。只输出改写后的指令本身，不要解释。例：「那个帮我搜一下流浪地球的预告片然后放一下」→「搜索《流浪地球》预告片并播放」' },
-            { role: 'user', content: text },
+            { role: 'user', content: cleaned },
           ],
         }),
       });
       const j = await r.json();
       const c = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
-      if (c) return c.trim().replace(/^["“”]|["“”]$/g, '');
+      // LLM 输出也可能带语气标点或把短动词改坏，回来再净化一次
+      if (c) return sanitizeSpeech(c.trim().replace(/^["“”]|["“”]$/g, ''));
     } catch (e) { /* 降级本地 */ }
   }
-  return normalizeSpeech(text);
+  return normalizeSpeech(cleaned);
 }
 
 /* ---------------- 执行引擎 ---------------- */
@@ -935,7 +1002,21 @@ async function runTask(t) {
           await sh(`osascript -e 'quit application "${realName}"'`);
           execNote = result = '已退出应用：' + (it.appName || realName);
         } else if (sub === 'quit_front') {
-          const front = (await sh(`osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>&1`)).trim();
+          // 优先走 AppKit 取前台应用：不依赖「辅助功能」权限，裸「关闭」在未授权时也能生效。
+          // 旧实现只用 System Events，权限一丢就把错误文本当成应用名，回报「已退出」但其实什么都没做。
+          let front = '';
+          try {
+            front = (await sh(`osascript -l JavaScript -e 'ObjC.import("AppKit"); $.NSWorkspace.sharedWorkspace.frontmostApplication.localizedName.js'`)).trim();
+          } catch (e) { front = ''; }
+          if (!front || /execution error|权限|-10004|-1743|not allowed/i.test(front)) {
+            try { front = (await sh(`osascript -e 'tell application "System Events" to get name of first process whose frontmost is true'`)).trim(); }
+            catch (e2) { front = ''; }
+          }
+          if (!front || /execution error|权限|-10004|-1743|not allowed/i.test(front)) {
+            await openAccessibilityPrefs();
+            t.needPermission = true;
+            throw new Error('取不到前台应用，需要辅助功能权限。已在 Mac 上打开「隐私与安全 → 辅助功能」，勾选后重试。');
+          }
           await sh(`osascript -e 'quit application "${front}"'`).catch(() => {});
           execNote = result = '已退出当前应用：' + front;
         } else if (sub === 'close_window' || sub === 'close_tab') {
@@ -1708,7 +1789,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,Bli
   <div class="main">
     <div class="voice">
       <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
-      <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+      <div class="voice-tip" id="voiceTip">短按说话，说完自动执行；长按说完松手</div>
       <div class="voice-links">
         <a class="voice-alt" id="voiceAlt" href="#">切换语音方式</a>
         <button class="voice-alt" id="speakBtn" type="button">播报开</button>
@@ -1769,7 +1850,9 @@ async function sendTask(text){
     var r = await api('/api/task', {instruction:text});
     var j = await r.json().catch(function(){return {};});
     if(!r.ok || !j.id){ log('✗ 发送失败 '+r.status, 'err'); return; }
-    poll(j.id, text);
+    // 服务端会把「关必 / 关 / 把它关了」理解成规范指令，回显出来让用户看得见、可纠正
+    if(j.normalized && j.normalized !== text) log('理解成：'+j.normalized);
+    poll(j.id, j.normalized || text);
   }catch(e){ log('✗ 网络错误：'+e.message, 'err'); }
 }
 $('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); });
@@ -1869,7 +1952,8 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
 
 /* 语音：按住说话 */
 (function(){
-  var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
+  var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false;
+  var finalParts = [], interimText = '', pressStart = 0, tapMode = false, gotError = '', suppressClick = false;
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   /* 结果播报：说话下指令 → Mac 执行 → 手机读回结果，形成「对讲机」闭环 */
   function speak(text){
@@ -1905,7 +1989,7 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
     // HTTP 或浏览器不支持网页语音识别：圆球改为一键唤起 iOS 键盘听写
     // 系统级中文听写，零证书、零权限、零配置，任何网络下都能「说话控制电脑」
     tip.textContent = '点圆球说话（用键盘听写，零配置）';
-    $('voiceAlt').textContent = '切到 HTTPS 按住说话 →';
+    $('voiceAlt').textContent = '切到 HTTPS 语音入口 →';
     $('voiceAlt').addEventListener('click', function(e){
       e.preventDefault();
       log('正在切换到 HTTPS 语音入口…');
@@ -1917,38 +2001,85 @@ if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encod
   // HTTPS + 浏览器支持识别：按住说话；键盘听写始终作为备选
   $('voiceAlt').textContent = '或用键盘听写';
   $('voiceAlt').addEventListener('click', function(e){ e.preventDefault(); keyboardDictation(); });
+  /* 短词「关闭」只有两三个字：按住说话时手指一松就 stop()，iOS Safari 往往
+   * 还没来得及把结果标成 isFinal，旧逻辑 finalText 为空 → 静默什么都不做。
+   * 现在：① 每次 onresult 重建完整 final 文本，不依赖「最后一个 result 是否 final」；
+   *      ② interim 也作为兜底；③ 短按不打断，交给识别引擎自动收尾；
+   *      ④ 无结果时明确提示 + 一键降级键盘听写，不再「看起来点了没反应」。 */
+  function cleanHeard(s){
+    return String(s||'').replace(/[。．.!！?？,，、;；…~～\s]+$/g,'')
+      .replace(/([\u4e00-\u9fa5])\s+([\u4e00-\u9fa5])/g,'$1$2').trim();
+  }
+  function finishHeard(){
+    var heard = cleanHeard(finalParts.join('') || interimText);
+    if(heard){
+      tip.textContent = '听到：' + heard + ' → 执行中';
+      $('cmd').value = heard;   // 留在输入框：识别错了可直接改写重发
+      log('听到：' + heard);
+      finalParts = []; interimText = '';
+      sendTask(heard);
+    }else{
+      tip.textContent = gotError === 'no-speech'
+        ? '没听清，短按圆球再说一次（或用键盘听写）'
+        : '没收到指令，短按圆球再说一次（或用键盘听写）';
+      $('voiceAlt').textContent = '改用键盘听写';
+      log('语音没拾取到内容，可重说或用键盘听写', 'err');
+    }
+  }
   function startRec(){
     if(recognizing) return;
-    finalText = '';
+    finalParts = []; interimText = ''; gotError = '';
     try{
       rec = new SR(); rec.lang = 'zh-CN'; rec.interimResults = true; rec.continuous = false;
       rec.onresult = function(ev){
-        var s = '';
-        for(var i=0;i<ev.results.length;i++) s += ev.results[i][0].transcript;
-        tip.textContent = '识别中：' + s;
-        if(ev.results[ev.results.length-1].isFinal) finalText = s.trim();
+        var finals = '', interim = '';
+        for(var i=0;i<ev.results.length;i++){
+          var r = ev.results[i], t = (r[0] && r[0].transcript) || '';
+          if(r.isFinal) finals += t; else interim += t;
+        }
+        finalParts = [finals];   // 每次重建，避免同一段 final 被重复累加
+        interimText = interim;
+        tip.textContent = '识别中：' + cleanHeard(finals + interim);
       };
       rec.onerror = function(ev){
-        var m = ev.error || '';
-        if(m === 'not-allowed' || m === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
-        else if(m === 'no-speech') tip.textContent = '没听到，按住再试一次';
-        else tip.textContent = '识别不可用（'+m+'），请改用键盘听写';
+        gotError = ev.error || '';
+        if(gotError === 'not-allowed' || gotError === 'service-not-allowed') tip.textContent = '麦克风权限被拒，可点下方「用键盘听写」';
+        else if(gotError === 'no-speech') tip.textContent = '没听到，再说一次或稍等自动收尾';
+        else tip.textContent = '识别不可用（'+gotError+'），请改用键盘听写';
       };
       rec.onend = function(){
-        recognizing = false; btn.classList.remove('rec'); rec = null;
-        if(finalText){ sendTask(finalText); finalText = ''; }
-        else if(tip.textContent.indexOf('权限') < 0 && tip.textContent.indexOf('语音错误') < 0) tip.textContent = '按住说出指令，松开自动执行';
+        recognizing = false; btn.classList.remove('rec'); rec = null; tapMode = false;
+        finishHeard();
       };
-      rec.start(); recognizing = true; btn.classList.add('rec'); tip.textContent = '聆听中…';
-    }catch(e){ tip.textContent = '启动失败：' + e.message; }
+      rec.start(); recognizing = true; btn.classList.add('rec');
+      tip.textContent = '聆听中…说完自动结束';
+    }catch(e){ tip.textContent = '启动失败：' + e.message; recognizing = false; btn.classList.remove('rec'); }
   }
   function stopRec(){ if(rec && recognizing){ try{ rec.stop(); }catch(e){} } }
-  btn.addEventListener('touchstart', function(e){ e.preventDefault(); startRec(); }, {passive:false});
-  btn.addEventListener('touchend', function(e){ e.preventDefault(); stopRec(); }, {passive:false});
+  function pressDown(e){ if(e && e.preventDefault) e.preventDefault(); pressStart = Date.now(); tapMode = false; startRec(); }
+  function pressUp(e){
+    if(e && e.preventDefault) e.preventDefault();
+    suppressClick = true; setTimeout(function(){ suppressClick = false; }, 550);
+    if(Date.now() - pressStart < 400 && recognizing){
+      // 短按 = 自由聆听：不 stop，等识别引擎判定说完；再点一下可提前结束
+      tapMode = true;
+      tip.textContent = '正在听…说完自动结束，再点一下可提前结束';
+      return;
+    }
+    stopRec();
+  }
+  btn.addEventListener('touchstart', pressDown, {passive:false});
+  btn.addEventListener('touchend', pressUp, {passive:false});
   btn.addEventListener('touchcancel', function(){ stopRec(); });
-  btn.addEventListener('mousedown', function(e){ e.preventDefault(); startRec(); });
-  btn.addEventListener('mouseup', function(e){ e.preventDefault(); stopRec(); });
-  btn.addEventListener('mouseleave', function(){ stopRec(); });
+  btn.addEventListener('mousedown', function(e){ pressDown(e); });
+  btn.addEventListener('mouseup', function(e){ pressUp(e); });
+  btn.addEventListener('mouseleave', function(){ if(!tapMode) stopRec(); });
+  btn.addEventListener('click', function(e){
+    e.preventDefault();
+    if(suppressClick) return;              // 忽略 touchend/mouseup 带来的合成 click
+    if(recognizing && tapMode) stopRec();  // 自由聆听中：再点一下提前结束
+    else if(!recognizing) startRec();      // 桌面单击也能直接开始听
+  });
 })();
 
 checkConn();
@@ -2681,7 +2812,7 @@ code.inline{background:var(--soft);padding:1px 5px;border-radius:4px;font-size:1
         <h2>5 · 语音输入</h2><p class="lead">手机遥控电脑的语音链路。<b>默认不需要任何服务端 ASR</b> —— iOS 键盘听写本身就是系统级中文识别。</p>
         <div class="grid2">
           <div class="mini"><h4>① 键盘听写 <span class="tag">推荐主力</span></h4><p>点手机页紫色圆球 → 唤起输入框 → 点 iOS 键盘上的麦克风 → 说话 → 点发送。零证书、零权限、任何网络都可用。</p><span class="pill ok">零配置</span></div>
-          <div class="mini"><h4>② 按住说话（网页识别）</h4><p>用 <code class="inline">.local:8788</code> 的 HTTPS 入口，按住紫色圆球说话、松开自动执行。需先信任证书，iOS Safari 支持度不一致。</p><span class="pill warn">需 HTTPS</span></div>
+          <div class="mini"><h4>② 网页识别（短按说话）</h4><p>用 <code class="inline">.local:8788</code> 的 HTTPS 入口：<b>短按</b>圆球说完自动收尾、<b>长按</b>说完松手。两字词「关闭」不再被松手掐断；听到的原话会留在输入框可改写。需先信任证书，iOS Safari 支持度不一致。</p><span class="pill warn">需 HTTPS</span></div>
           <div class="mini"><h4>③ 结果语音播报</h4><p>执行完成后手机把结果读回来，形成「说话 → Mac 执行 → 手机回读」闭环，语音区可一键开关。</p><span class="pill idle">可选</span></div>
           <div class="mini"><h4>④ 服务端 ASR（实验）</h4><p>自己接转写引擎，把手机录音上传给 Mac 或云 API。准确可控，但要装依赖 / 配密钥，音频可能出网。</p><span class="pill idle">默认关闭</span></div>
         </div>
@@ -2799,11 +2930,11 @@ function renderLinks(){
   var L=S.links,c=S.cert;
   el('linkBox').innerHTML=
     linkCard('文字入口（推荐加到主屏）','固定 .local',L.local,'IP 变了也不失效')+
-    linkCard('语音入口（按住说话）','HTTPS',L.localHttps,'需先在手机上信任证书')+
+    linkCard('语音入口（短按说话）','HTTPS',L.localHttps,'需先在手机上信任证书')+
     linkCard('备用：当前 IP 直连','IP',L.http,'临时排障用，IP 会变');
   el('certUrl').innerHTML='<code class="inline">'+esc(L.cert)+'</code>';
   var h='';
-  if(!c.exists) h=box('warn','<b>还没有 HTTPS 证书。</b>文字入口可用，但按住说话不可用。')+'<div class="row"><button class="btn" onclick="regenCert()">生成证书</button></div>';
+  if(!c.exists) h=box('warn','<b>还没有 HTTPS 证书。</b>文字入口可用，但网页语音不可用。')+'<div class="row"><button class="btn" onclick="regenCert()">生成证书</button></div>';
   else if(!c.coversCurrentIp) h=box('warn','<b>当前 IP '+esc(S.lanIP)+' 不在证书里。</b>证书 SAN 只有：'+esc(c.line||'（读取失败）')+'。用 IP 打开 HTTPS 会报证书不匹配；用 .local 域名不受影响，但若想用 IP 的 HTTPS 入口，建议重签。')+'<div class="row"><button class="btn" onclick="regenCert()">重签证书（保留旧 IP）</button></div>';
   else h=box('ok','<b>证书已覆盖当前 IP 与 .local 域名。</b>SAN：'+esc(c.line));
   h+='<div class="row"><a class="btn small" href="/cert.crt" download>下载根证书（本机）</a><a class="btn small ghost" href="/api/reload" onclick="doReload(event)">重载服务</a></div>';
@@ -3343,9 +3474,15 @@ const server = http.createServer((req, res) => {
       try {
         const { instruction, text, direct, forceText } = JSON.parse(body || '{}');
         // 兼容 text 字段：手机页/第三方客户端可能用 text 传指令，避免退化成「指令为空」
-        const cmd = String(instruction ?? text ?? '');
-        const t = makeTask(cmd, direct ? { direct: true, forceText: !!forceText } : {}); tasks.push(t); save(); runTask(t);
-        res.end(JSON.stringify({ id: t.id }));
+        const raw = String(instruction ?? text ?? '');
+        // 指令链路统一净化：ASR 同音错字 / 裸动词 / 标点，以及「把它关了」这类上下文指代。
+        // 原文直输(direct/forceText)必须逐字保留，绝不净化。
+        const cmd = direct ? raw : sanitizeSpeech(resolveContextRef(raw));
+        if (!direct) rememberAppContext(cmd);
+        const extra = direct ? { direct: true, forceText: !!forceText } : {};
+        if (!direct && cmd !== raw) extra.spoken = raw;   // 保留听到的原话，便于回溯与纠错
+        const t = makeTask(cmd, extra); tasks.push(t); save(); runTask(t);
+        res.end(JSON.stringify({ id: t.id, normalized: cmd }));
       } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: 'bad request' })); }
     });
     return;
@@ -3365,7 +3502,7 @@ const HTTPS_PORT = Number(PORT) + 1;
 // 用带重试的监听：软重载时新进程会与尚未退出的旧进程抢端口，需等待释放后重试
 listenWithRetry(server, HTTP_PORT, '0.0.0.0', '龙虾脑 HTTP', () => {
   const lan = lanIP();
-  console.log('龙虾脑 v3.4 已启动');
+  console.log('龙虾脑 v3.5 已启动');
   console.log('  手机端（文字输入）:  http://' + lan + ':' + HTTP_PORT);
   startHttps();
   const cfg = llmConfig();

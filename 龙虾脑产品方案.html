@@ -136,7 +136,7 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td><b>鼠标控制</b></td><td>手机触控板</td><td>手机端触控板驱动 Mac 光标移动 / 点击（CoreGraphics，零依赖）；面板为 flex 固定首块 + visualViewport 补偿，软键盘弹出也不被顶出屏幕</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>鼠标控制</b></td><td>滚轮滚动</td><td>触控板旁滚轮条上下滑动 / ▲▼ 单步按钮，驱动 Mac 页面滚动（CGEventCreateScrollWheelEvent，按行）</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="3"><b>语音输入</b></td><td>键盘听写（零配置）</td><td>HTTP 下点圆球唤起输入框，用 iOS 系统键盘听写说话 → 文字指令 → 发送；无需 HTTPS / 证书 / 麦克风权限</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td>按住说话</td><td>HTTPS(8788) + 已信任证书下走 Web Speech API，按住说、松开执行；识别不可用时自动提示降级键盘听写</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>网页语音识别</td><td>HTTPS(8788) + 已信任证书下走 Web Speech API；<b>短按说完自动收尾、长按说完松手</b>，专治「关闭」这类两字短词被提前掐断；识别到的原话留在输入框可改写重发，无结果明确提示并一键降级键盘听写</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>语音播报</td><td>执行结果经 speechSynthesis 读回，形成「说话 → Mac 执行 → 手机回读」的对讲机闭环，可一键开关</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="2"><b>安全</b></td><td>令牌鉴权</td><td>局域网须带令牌 / 自定义密码，本机 localhost 免验证</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>本地运行</td><td>服务运行于 Mac 本机，不部署 Vercel</td><td class="ok">✅ 已实现</td></tr>
@@ -151,6 +151,9 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td>证书 / IP 自检</td><td>解析证书 SAN 并比对当前局域网 IP；IP 变化后提示「当前 IP 不在证书里」，可一键重签（保留历史 IP）+ 重载，避免手机端 HTTPS 静默报证书不匹配</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>一键交接 launchd</td><td>安装开机自启并确认 launchd 任务已加载后，才让当前手动实例退出，新进程在端口重试窗口内自动接管；加载失败则不交接，宁可不切也不让服务断掉</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>语音扩展</b></td><td>可插拔服务端 ASR</td><td><code>asr-config.json</code> 三档引擎：关闭（默认，用 iOS 键盘听写）/ 本机 whisper.cpp（离线）/ 云端 OpenAI 兼容 /audio/transcriptions；<code>POST /api/asr</code> 录音转文字后回到既有指令链路，未启用时明确报错而非假装识别</td><td class="ok">✅ 已实现（默认关闭）</td></tr>
+    <tr><td><b>指令理解</b></td><td>语音短词净化</td><td>键盘听写 / 网页识别 / 手打文字共用 <code>sanitizeSpeech()</code>：去句尾语气标点与中文间空格、纠同音错字（关必 / 关毕 / 关闭昂）、补裸动词（「关」「关了」→ 关闭）、「关微信」→ 关闭微信；明确系统短指令直通规则引擎，避免 LLM 把「关」幻觉成片名。原文直输逐字保留，不冲突</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>指令理解</b></td><td>轻量上下文指代</td><td>记住最近指令涉及的真实应用：「打开微信」后说「把它关了」「再关一次」「打开它」自动接上微信；裸「关闭」仍只退出当前前台应用，不被误替换。理解结果回显到手机日志，识别错了可改写重发</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>Mac 操控</b></td><td>无需授权的退出应用</td><td>裸「关闭 / 退出当前应用」改用 AppKit / JXA 取前台应用名，不再依赖「辅助功能」权限；取不到时明确报错并打开系统设置，杜绝把错误文本当应用名、回报「已退出」但其实没执行的假成功</td><td class="ok">✅ 已实现</td></tr>
   </table>
   <p style="margin-top:10px;font-size:13px;color:#888780">辅助功能：自动输入 / 鼠标点击依赖 macOS「辅助功能」授权，需在系统设置中授权运行 <code>node app.js</code> 的程序（终端 / VS Code / WorkBuddy 等）。</p>
 </section>
@@ -167,10 +170,11 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
       <li>局域网令牌鉴权 + 自定义密码，本机免验证</li>
       <li>首次配置向导：权限 / 自启 / 固定入口 / 证书 / 语音一次配好，IP 变化可自检并一键重签</li>
       <li>可插拔 ASR 适配层（默认关闭，键盘听写为主力）</li>
+      <li>短词净化 + 轻量应用级指代（「把它关了」「再打开」），不依赖服务端 ASR</li>
     </ul></div>
     <div class="mini"><h3 class="err">当前版本仍不做</h3><ul>
       <li>多意图 / 多步复杂任务编排（如「下载并压缩并邮件发送」）</li>
-      <li>常驻唤醒词 / 多轮指代（「把它发给刚才那个人」）——需独立 ASR 与会话状态，成本高于收益</li>
+      <li>常驻唤醒词 / 完整多轮会话指代（「把它发给刚才那个人」）——需独立 ASR 与会话状态，成本高于收益；当前只做应用级轻量指代</li>
       <li>账号体系与多用户隔离 —— 当前为单设备形态</li>
       <li>删除文件、批量化破坏性等高危不可逆动作（需产品化后强制二次确认）</li>
       <li>公网部署 —— 控制能力依赖 Mac 本机，坚持本地运行不上 Vercel</li>
