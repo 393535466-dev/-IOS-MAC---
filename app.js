@@ -1339,6 +1339,9 @@ renderMode();
 renderApps();
 (function(){var tg=document.getElementById('themeToggle');if(tg)tg.checked=(document.documentElement.getAttribute('data-theme')==='dark');})();
 probe();
+// 切回页面（从 /manage 复制链接回来）时自动复检连接/令牌
+document.addEventListener('visibilitychange', function(){ if(!document.hidden) probe(); });
+window.addEventListener('focus', function(){ setTimeout(probe, 300); });
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
 (function(){
@@ -1847,6 +1850,10 @@ function startHttps() {
 /* ---------------- HTTP ---------------- */
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://x');
+  // 关键：禁用一切缓存，避免 iPhone Safari 缓存旧版手机页（表现为「重载后仍点不动」）
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   // 证书下载：手机 Safari 打开后可安装为受信任根证书（公钥文件，无需令牌）
   if (req.method === 'GET' && url.pathname === '/cert.crt') {
