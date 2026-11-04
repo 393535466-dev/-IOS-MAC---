@@ -1,106 +1,96 @@
-<!-- 龙虾脑手机页静态快照：由服务端 MINI_PAGE 导出，走 /public/* 实时读盘，无需重载服务。 -->
+<!-- 龙虾脑手机页：与服务端 MINI_PAGE 同步，走 /public/* 实时读盘，无需重载服务 -->
 <!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>龙虾脑·遥控</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>龙虾脑</title>
 <script>try{var _t=localStorage.getItem('lb_theme');if(_t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 <style>
-  :root{--bg:#f2f3f5;--card:#fff;--fg:#1a1a1a;--muted:#999;--line:#e5e5e5;--sub:#fafafa;--chip:#fff;--chipfg:#333;--input:#fff;--accent:#1a1a1a;--accentfg:#fff;--logbg:#fff;--hint:#aaa}
-  [data-theme="dark"]{--bg:#121214;--card:#1e1e21;--fg:#f2f2f4;--muted:#8a8a90;--line:#35353b;--sub:#26262b;--chip:#26262b;--chipfg:#e6e6e8;--input:#26262b;--accent:#f2f2f4;--accentfg:#121214;--logbg:#26262b;--hint:#6f6f76}
-  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);padding:10px 12px 28px}
-  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
-  .top h1{font-size:16px;margin:0;font-weight:700}
-  .top-r{display:flex;align-items:center;gap:8px}
-  .tbtn{font-size:12px;padding:4px 10px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--fg);cursor:pointer}
-  .conn{font-size:12px;padding:4px 9px;border-radius:12px;background:var(--sub);color:var(--muted)}
-  .conn.ok{background:#e6f7ee;color:#0a8a4a}
-  .conn.err{background:#fdecea;color:#c0392b}
-  .log{display:none;margin:0 0 10px;padding:9px 11px;border-radius:9px;font-size:13px;line-height:1.45;word-break:break-all;background:var(--logbg);border:1px solid var(--line)}
-  .log.ok{border-color:#4caf7d}
-  .log.err{border-color:#e08a80}
-  .box{background:var(--card);border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-  .box .t{font-size:12px;color:var(--muted);margin-bottom:9px}
-  .row{display:flex;gap:8px}
-  .row input{flex:1;min-width:0;background:var(--input);color:var(--fg);border:1px solid var(--line);border-radius:9px;padding:11px 12px;font-size:15px;outline:none}
-  .row input:focus{border-color:var(--fg)}
-  .send{background:var(--accent);color:var(--accentfg);border:none;border-radius:9px;padding:0 18px;font-size:15px;font-weight:600;flex-shrink:0}
-  .apps{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-  .app{display:flex;flex-direction:column;align-items:center;gap:5px;background:var(--sub);border:1px solid var(--line);border-radius:11px;padding:10px 4px;cursor:pointer}
-  .app:active{opacity:.7}
-  .app .ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center}
-  .app .ic svg{width:25px;height:25px;fill:#fff;display:block}
-  .app .lb{font-size:11px;color:var(--fg)}
-  .chips{display:flex;flex-wrap:wrap;gap:8px}
-  .chip{border:1px solid var(--line);background:var(--chip);color:var(--chipfg);border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer}
-  .chip:active{opacity:.7}
-  .pad{height:190px;background:linear-gradient(135deg,#2b2b2b,#3a3a3a);border-radius:12px;touch-action:none;position:relative;overflow:hidden;color:#999;display:flex;align-items:center;justify-content:center;font-size:12px}
-  .scrollwrap{display:flex;gap:10px;align-items:stretch}
-  .wheel{flex:1;background:linear-gradient(180deg,#e9e9e9,#dcdcdc);border-radius:10px;height:120px;touch-action:none;position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;color:#888;font-size:12px}
-  [data-theme="dark"] .wheel{background:linear-gradient(180deg,#303036,#26262b);color:#8a8a90}
-  .wbts{display:flex;flex-direction:column;gap:8px;justify-content:center}
-  .wbt{width:54px;height:54px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:20px}
-  .wbt:active{opacity:.7}
-  .hint{font-size:11px;color:var(--hint);text-align:center;margin-top:14px;line-height:1.6}
-  .voice-wrap{display:flex;flex-direction:column;align-items:center;gap:9px;padding:4px 0 2px}
-  .orb-btn{width:78px;height:78px;border-radius:50%;border:none;position:relative;overflow:hidden;cursor:pointer;-webkit-user-select:none;user-select:none;
-    background:radial-gradient(circle at 34% 26%, #cba9ff 0%, #9568f6 28%, #6f3ad8 60%, #3a1a90 100%);
-    box-shadow:0 9px 24px rgba(109,59,214,.42), inset -6px -9px 17px rgba(0,0,0,.3), inset 5px 6px 14px rgba(255,255,255,.35)}
-  .orb-btn::after{content:'';position:absolute;top:9px;left:18px;width:34px;height:19px;border-radius:50%;background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.85), rgba(255,255,255,0) 70%);pointer-events:none}
-  .orb-bars{position:relative;z-index:1;display:flex;gap:6px;align-items:center;justify-content:center;height:100%}
-  .orb-bars i{display:block;width:6px;height:23px;border-radius:6px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7)}
-  .orb-bars i:nth-child(2){height:31px}
-  .orb-btn.rec{transform:scale(1.07)}
-  .orb-btn.off{filter:grayscale(.5);opacity:.75}
-  .voice-tip{font-size:11px;color:var(--muted);text-align:center;line-height:1.5}
+:root{--bg:#f4f5f7;--card:#fff;--fg:#17171a;--muted:#8b8b92;--line:#e3e4e8;--sub:#f7f7f9;--pad1:#2c2c30;--pad2:#3a3a40;--accent:#17171a;--accentfg:#fff;--ok:#0a8a4a;--okbg:#e8f7ee;--err:#c0392b;--errbg:#fdece9}
+[data-theme="dark"]{--bg:#121215;--card:#1d1d21;--fg:#f2f2f4;--muted:#8b8b93;--line:#33333a;--sub:#26262c;--pad1:#26262b;--pad2:#323238;--accent:#f2f2f4;--accentfg:#121215;--ok:#4fd18b;--okbg:#17382a;--err:#ff8a80;--errbg:#3a1f1e}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;font-size:14px}
+.dock{position:sticky;top:0;z-index:20;background:var(--bg);padding:calc(8px + env(safe-area-inset-top)) 14px 10px;border-bottom:1px solid var(--line)}
+.bar{display:flex;align-items:center;gap:7px;height:36px}
+.brand{font-size:15px;font-weight:700;white-space:nowrap;flex-shrink:0}
+.status{flex:1;min-width:0;height:34px;display:flex;align-items:center;gap:7px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--card);overflow:hidden}
+.status.ok{color:var(--ok);background:var(--okbg);border-color:currentColor}
+.status.err{color:var(--err);background:var(--errbg);border-color:currentColor}
+.dot{width:7px;height:7px;border-radius:50%;background:#b9b9c0;flex-shrink:0}
+.stxt{font-size:12px;color:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status:not(.ok):not(.err) .stxt{color:var(--muted)}
+.mini{flex-shrink:0;height:30px;min-width:38px;padding:0 9px;border:1px solid var(--line);border-radius:9px;background:var(--card);color:var(--fg);font-size:12px;font-family:inherit;line-height:28px;text-align:center;text-decoration:none;cursor:pointer}
+.mini:active{opacity:.6}
+.padrow{display:flex;gap:8px;margin-top:9px;height:152px}
+.pad{flex:1;min-width:0;border-radius:12px;background:linear-gradient(135deg,var(--pad1),var(--pad2));border:1px solid rgba(255,255,255,.06);color:#a9a9b2;display:flex;align-items:center;justify-content:center;font-size:12px;touch-action:none;position:relative;overflow:hidden}
+.pad:active{opacity:.92}
+.wheel{width:52px;flex-shrink:0;border-radius:12px;background:var(--card);border:1px solid var(--line);display:flex;flex-direction:column;padding:5px;gap:5px;touch-action:none}
+.track{flex:1;min-height:0;border-radius:8px;background:var(--sub);color:var(--muted);font-size:10px;letter-spacing:2px;display:flex;align-items:center;justify-content:center;writing-mode:vertical-rl;touch-action:none}
+.wb{display:flex;gap:4px;flex-shrink:0}
+.wbt{flex:1;height:26px;border:1px solid var(--line);border-radius:7px;background:var(--sub);color:var(--fg);font-size:12px;font-family:inherit;line-height:1;padding:0}
+.wbt:active{background:var(--accent);color:var(--accentfg)}
+.main{padding:0 14px}
+.voice{display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 0 20px}
+.orb-btn{width:76px;height:76px;border-radius:50%;border:none;position:relative;overflow:hidden;cursor:pointer;-webkit-user-select:none;user-select:none;
+  background:radial-gradient(circle at 34% 26%, #cba9ff 0%, #9568f6 28%, #6f3ad8 60%, #3a1a90 100%);
+  box-shadow:0 9px 24px rgba(109,59,214,.42), inset -6px -9px 17px rgba(0,0,0,.3), inset 5px 6px 14px rgba(255,255,255,.35)}
+.orb-btn::after{content:'';position:absolute;top:9px;left:18px;width:34px;height:19px;border-radius:50%;background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.85), rgba(255,255,255,0) 70%);pointer-events:none}
+.orb-bars{position:relative;z-index:1;display:flex;gap:6px;align-items:center;justify-content:center;height:100%}
+.orb-bars i{display:block;width:6px;height:23px;border-radius:6px;background:#fff;box-shadow:0 0 8px rgba(255,255,255,.7)}
+.orb-bars i:nth-child(2){height:31px}
+.orb-btn.rec{transform:scale(1.07)}
+.orb-btn.off{filter:grayscale(.45);opacity:.8}
+.voice-tip{font-size:11px;color:var(--muted);text-align:center;line-height:1.5;min-height:16px}
+.strip{display:flex;gap:10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:0 -14px;padding:2px 14px 6px}
+.strip::-webkit-scrollbar{display:none}
+.app{flex:0 0 auto;width:66px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
+.app:active{opacity:.65}
+.app .ic{width:54px;height:54px;border-radius:14px;display:flex;align-items:center;justify-content:center}
+.app .ic svg{width:28px;height:28px;fill:#fff;display:block}
+.app .lb{font-size:11px;color:var(--fg);white-space:nowrap}
+.gap{height:16px}
+.chip{flex:0 0 auto;height:36px;display:flex;align-items:center;padding:0 15px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--fg);font-size:13px;white-space:nowrap;cursor:pointer}
+.chip:active{opacity:.6}
+.composer{display:flex;gap:9px;align-items:center;margin-top:18px}
+.cmd{flex:1;min-width:0;height:46px;border:1px solid var(--line);border-radius:23px;background:var(--card);color:var(--fg);padding:0 16px;font-size:15px;font-family:inherit;outline:none}
+.cmd:focus{border-color:var(--muted)}
+.send{width:46px;height:46px;flex-shrink:0;border:none;border-radius:50%;background:var(--accent);color:var(--accentfg);font-size:21px;line-height:1;font-family:inherit;cursor:pointer}
+.send:active{opacity:.65}
+.spacer{height:calc(150px + env(safe-area-inset-bottom))}
 </style>
 </head>
 <body>
-  <div class="top"><h1>龙虾脑 · 遥控</h1><div class="top-r"><button class="tbtn" id="themeBtn" type="button">深色</button><div id="conn" class="conn">连接中…</div></div></div>
-  <div id="log" class="log"></div>
-
-  <div class="box">
-    <div class="t">语音指令</div>
-    <div class="voice-wrap">
-      <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
-      <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+  <div class="dock">
+    <div class="bar">
+      <span class="brand">龙虾脑</span>
+      <div class="status" id="statusBox"><span class="dot" id="dot"></span><span class="stxt" id="statusText">等待指令…</span></div>
+      <a class="mini" href="/dashboard" id="dashLink">看板</a>
+      <button class="mini" id="themeBtn" type="button">深色</button>
     </div>
-  </div>
-
-  <div class="box">
-    <div class="t">文字指令</div>
-    <div class="row">
-      <input id="cmd" placeholder="例如：打开微信 / 关闭当前应用 / 截个屏" />
-      <button class="send" id="sendBtn">发送</button>
-    </div>
-  </div>
-
-  <div class="box">
-    <div class="t">常用应用</div>
-    <div class="apps" id="apps"></div>
-  </div>
-
-  <div class="box">
-    <div class="t">快捷指令</div>
-    <div class="chips" id="chips"></div>
-  </div>
-
-  <div class="box">
-    <div class="t">鼠标控制（手指滑动移动 · 轻点=单击）</div>
-    <div class="pad" id="pad">在此滑动控制鼠标</div>
-  </div>
-
-  <div class="box">
-    <div class="t">滚动</div>
-    <div class="scrollwrap">
-      <div class="wheel" id="wheel">上下滑动滚动</div>
-      <div class="wbts">
-        <button class="wbt" id="sup">▲</button>
-        <button class="wbt" id="sdown">▼</button>
+    <div class="padrow">
+      <div class="pad" id="pad"><span id="padHint">滑动移动 · 轻点单击</span></div>
+      <div class="wheel">
+        <div class="track" id="track">上下滑动</div>
+        <div class="wb"><button class="wbt" id="sup" type="button">▲</button><button class="wbt" id="sdown" type="button">▼</button></div>
       </div>
     </div>
   </div>
 
-  <div class="hint">语音需在 HTTPS 链接下使用（:8788）。本页无需令牌，同一 Wi-Fi 直接可用。<br>如仍无反应，请查看上方状态条与结果提示。</div>
+  <div class="main">
+    <div class="voice">
+      <button class="orb-btn" id="mic" type="button"><span class="orb-bars"><i></i><i></i></span></button>
+      <div class="voice-tip" id="voiceTip">按住说出指令，松开自动执行</div>
+    </div>
+
+    <div class="strip" id="apps"></div>
+    <div class="gap"></div>
+    <div class="strip" id="chips"></div>
+
+    <div class="composer">
+      <input class="cmd" id="cmd" placeholder="输入指令，例如：打开微信" />
+      <button class="send" id="sendBtn" type="button">↑</button>
+    </div>
+    <div class="spacer"></div>
+  </div>
 
 <script>
 var TOKEN = new URLSearchParams(location.search).get('t') || localStorage.getItem('lb_token') || '';
@@ -111,47 +101,61 @@ function api(p, body){
   if(TOKEN) h['x-lb-token']=TOKEN;
   return fetch(p, {method: body?'POST':'GET', headers:h, body: body?JSON.stringify(body):undefined});
 }
-function log(msg, ok){
-  var el = $('log'); el.textContent = msg; el.style.display='block';
-  el.className = 'log ' + (ok===undefined?'':(ok?'ok':'err'));
-  el.scrollIntoView({block:'nearest'});
+/* 只改文字，不调用 scrollIntoView —— 避免操作时页面被强行滚回顶端 */
+function log(msg, kind){
+  $('statusText').textContent = msg;
+  $('statusBox').className = 'status' + (kind ? ' ' + kind : '');
+}
+function setConn(ok, msg){
+  $('dot').style.background = ok ? '#22b573' : '#d9534f';
+  if(!ok && msg) log(msg, 'err');
 }
 async function checkConn(){
   try{
     var r = await api('/api/status');
-    var el = $('conn');
-    if(r.ok){ el.textContent='● 已连接 Mac'; el.className='conn ok'; }
-    else { el.textContent='● 异常('+r.status+')'; el.className='conn err'; }
-  }catch(e){ var c=$('conn'); c.textContent='● 无法连接'; c.className='conn err'; }
+    if(r.ok) setConn(true);
+    else setConn(false, '服务异常 ' + r.status);
+  }catch(e){ setConn(false, '无法连接 Mac 服务'); }
+}
+async function poll(id, label){
+  for(var i=0;i<24;i++){
+    await new Promise(function(r){setTimeout(r,350);});
+    var t;
+    try{ var r = await api('/api/task/'+id); if(!r.ok) break; t = await r.json(); }catch(e){ break; }
+    if(t.status==='success'){ log('✓ '+(t.result||'已完成'), 'ok'); return; }
+    if(t.status==='failed'){ log('✗ '+(t.error||'执行失败'), 'err'); return; }
+  }
+  log('… 仍在执行：'+label);
 }
 async function sendTask(text){
-  if(!text || !text.trim()){ log('请输入指令', false); return; }
+  text = String(text||'').trim();
+  if(!text){ log('请输入指令', 'err'); return; }
   log('发送：'+text);
   try{
-    var r = await api('/api/task', {text:text.trim()});
+    var r = await api('/api/task', {instruction:text});
     var j = await r.json().catch(function(){return {};});
-    if(r.ok){ log('✓ 已执行：'+text+(j.id?('（任务 '+j.id+'）'):''), true); }
-    else { log('✗ 服务器返回 '+r.status+'：'+(j.hint||j.error||'未知错误'), false); }
-  }catch(e){ log('✗ 网络错误：'+e.message+'（确认 Mac 服务在运行）', false); }
+    if(!r.ok || !j.id){ log('✗ 发送失败 '+r.status, 'err'); return; }
+    poll(j.id, text);
+  }catch(e){ log('✗ 网络错误：'+e.message, 'err'); }
 }
-$('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; });
-$('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; } });
+$('sendBtn').addEventListener('click', function(){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); });
+$('cmd').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendTask($('cmd').value); $('cmd').value=''; $('cmd').blur(); } });
 
 var APPS = [
-  {n:'微信', c:'#07C160', s:'<svg viewBox="0 0 24 24"><path d="M9.2 3C5.1 3 1.8 5.8 1.8 9.3c0 2 1.1 3.8 2.9 5L3.8 16.5l2.4-1.2c.9.3 1.9.4 3 .4h.6a5.6 5.6 0 0 1-.2-1.5c0-3.4 3.2-6.1 7.2-6.1h.6C16.8 4.7 13.4 3 9.2 3zM6.7 7.9a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/><path d="M22.2 13.9c0-3-2.9-5.4-6.5-5.4s-6.5 2.4-6.5 5.4 2.9 5.4 6.5 5.4c.8 0 1.6-.1 2.3-.4l2 1-.5-1.8c1.6-1 2.7-2.5 2.7-4.2zm-8.8-.9a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6zm4.6 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/></svg>'},
-  {n:'豆包', c:'#5B6CF5', s:'<svg viewBox="0 0 24 24"><path d="M12 2c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6z"/><path d="M18.5 13c.3 2.2 1.2 3.1 3.5 3.5-2.3.3-3.2 1.2-3.5 3.5-.3-2.3-1.2-3.2-3.5-3.5 2.3-.4 3.2-1.3 3.5-3.5z" opacity=".85"/></svg>'},
-  {n:'抖音', c:'#161823', s:'<svg viewBox="0 0 24 24"><path d="M16.6 2h-3v13.1a2.9 2.9 0 1 1-2.3-2.8V9.2a5.9 5.9 0 1 0 5.3 5.9V8.4a6.4 6.4 0 0 0 3.7 1.2V6.6a3.7 3.7 0 0 1-3.7-3.7V2z"/></svg>'},
-  {n:'WorkBuddy', c:'#FF5900', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><circle cx="12" cy="10" r="2.1" fill="#FF5900"/></svg>'},
-  {n:'浏览器', c:'#1E9BF0', s:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1 5.1-2.1z"/><circle cx="12" cy="12" r="1.2" fill="#1E9BF0"/></svg>'},
-  {n:'备忘录', c:'#F5A623', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16v18H4z" opacity=".25"/><path d="M4 3h16v4H4z"/><path d="M7 10h10v1.6H7zm0 3.4h10v1.6H7zm0 3.4h7v1.6H7z" opacity=".95"/></svg>'},
-  {n:'B站', c:'#FB7299', s:'<svg viewBox="0 0 24 24"><path d="M6.3 2.6l2.5 2.4h6.4l2.5-2.4a1 1 0 0 1 1.4 1.4l-1.5 1.5H18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h-.6L3.9 4a1 1 0 0 1 1.4-1.4zM8.5 10.6a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2zm7 0a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2z"/></svg>'},
-  {n:'网易云', c:'#E03A3A', s:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm3.9 8.1c-.2 2-1.7 3.4-3.5 4.4-1.2.7-2.5 1.3-2.9 2.6-.3 1 .2 2.1 1.3 2.1 1.3 0 2-1.4 1.7-2.6a1.4 1.4 0 0 1 2.7-.7c.5 2.3-1.1 4.6-3.6 4.9-2.7.3-5-1.9-4.6-4.6.4-2.6 2.4-3.7 4.3-4.9 1.5-.9 2.4-1.6 2.5-3 .1-1-.7-1.8-1.7-1.7-1 .1-1.7.9-1.9 1.8a1.4 1.4 0 0 1-2.7-.5c.4-2.5 2.6-4.3 5.1-4.1 2.5.2 4.1 2.1 3.8 4.3z"/></svg>'}
+  {n:'微信', k:'打开微信', c:'#07C160', s:'<svg viewBox="0 0 24 24"><path d="M9.2 3C5.1 3 1.8 5.8 1.8 9.3c0 2 1.1 3.8 2.9 5L3.8 16.5l2.4-1.2c.9.3 1.9.4 3 .4h.6a5.6 5.6 0 0 1-.2-1.5c0-3.4 3.2-6.1 7.2-6.1h.6C16.8 4.7 13.4 3 9.2 3zM6.7 7.9a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8zm5 0a.9.9 0 1 1 0-1.8.9.9 0 0 1 0 1.8z"/><path d="M22.2 13.9c0-3-2.9-5.4-6.5-5.4s-6.5 2.4-6.5 5.4 2.9 5.4 6.5 5.4c.8 0 1.6-.1 2.3-.4l2 1-.5-1.8c1.6-1 2.7-2.5 2.7-4.2zm-8.8-.9a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6zm4.6 0a.8.8 0 1 1 0-1.6.8.8 0 0 1 0 1.6z"/></svg>'},
+  {n:'豆包', k:'打开豆包', c:'#5B6CF5', s:'<svg viewBox="0 0 24 24"><path d="M12 2c.5 3.9 2.1 5.5 6 6-3.9.5-5.5 2.1-6 6-.5-3.9-2.1-5.5-6-6 3.9-.5 5.5-2.1 6-6z"/><path d="M18.5 13c.3 2.2 1.2 3.1 3.5 3.5-2.3.3-3.2 1.2-3.5 3.5-.3-2.3-1.2-3.2-3.5-3.5 2.3-.4 3.2-1.3 3.5-3.5z" opacity=".85"/></svg>'},
+  {n:'抖音', k:'打开抖音', c:'#161823', s:'<svg viewBox="0 0 24 24"><path d="M16.6 2h-3v13.1a2.9 2.9 0 1 1-2.3-2.8V9.2a5.9 5.9 0 1 0 5.3 5.9V8.4a6.4 6.4 0 0 0 3.7 1.2V6.6a3.7 3.7 0 0 1-3.7-3.7V2z"/></svg>'},
+  {n:'WorkBuddy', k:'打开WorkBuddy', c:'#FF5900', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H9l-5 4v-4H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><circle cx="12" cy="10" r="2.1" fill="#FF5900"/></svg>'},
+  {n:'浏览器', k:'打开浏览器', c:'#1E9BF0', s:'<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5" fill="none" stroke="#fff" stroke-width="1.6"/><path d="M15.6 8.4l-2.1 5.1-5.1 2.1 2.1-5.1 5.1-2.1z"/><circle cx="12" cy="12" r="1.2" fill="#1E9BF0"/></svg>'},
+  {n:'备忘录', k:'打开备忘录', c:'#F5A623', s:'<svg viewBox="0 0 24 24"><path d="M4 3h16v18H4z" opacity=".25"/><path d="M4 3h16v4H4z"/><path d="M7 10h10v1.6H7zm0 3.4h10v1.6H7zm0 3.4h7v1.6H7z" opacity=".95"/></svg>'},
+  {n:'B站', k:'打开哔哩哔哩', c:'#FB7299', s:'<svg viewBox="0 0 24 24"><path d="M6.3 2.6l2.5 2.4h6.4l2.5-2.4a1 1 0 0 1 1.4 1.4l-1.5 1.5H18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h-.6L3.9 4a1 1 0 0 1 1.4-1.4zM8.5 10.6a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2zm7 0a1.2 1.2 0 0 0-1.2 1.2v2.4a1.2 1.2 0 0 0 2.4 0v-2.4a1.2 1.2 0 0 0-1.2-1.2z"/></svg>'},
+  {n:'网易云', k:'打开网易云音乐', c:'#E03A3A', s:'<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm3.9 8.1c-.2 2-1.7 3.4-3.5 4.4-1.2.7-2.5 1.3-2.9 2.6-.3 1 .2 2.1 1.3 2.1 1.3 0 2-1.4 1.7-2.6a1.4 1.4 0 0 1 2.7-.7c.5 2.3-1.1 4.6-3.6 4.9-2.7.3-5-1.9-4.6-4.6.4-2.6 2.4-3.7 4.3-4.9 1.5-.9 2.4-1.6 2.5-3 .1-1-.7-1.8-1.7-1.7-1 .1-1.7.9-1.9 1.8a1.4 1.4 0 0 1-2.7-.5c.4-2.5 2.6-4.3 5.1-4.1 2.5.2 4.1 2.1 3.8 4.3z"/></svg>'}
 ];
 var appsEl = $('apps');
 APPS.forEach(function(a){
   var b = document.createElement('div'); b.className='app';
   b.innerHTML = '<div class="ic" style="background:'+a.c+'">'+a.s+'</div><div class="lb">'+a.n+'</div>';
-  b.addEventListener('click', function(){ sendTask('打开'+a.n); });
+  b.addEventListener('click', function(){ sendTask(a.k); });
   appsEl.appendChild(b);
 });
 
@@ -163,7 +167,13 @@ CHIPS.forEach(function(c){
   chipsEl.appendChild(b);
 });
 
-// 鼠标控制
+/* 触控板：只发请求 + 面板内轻反馈，不写状态条、不滚动页面 */
+var flashTimer = 0;
+function flash(msg){
+  $('padHint').textContent = msg;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(function(){ $('padHint').textContent='滑动移动 · 轻点单击'; }, 700);
+}
 (function(){
   var pad = $('pad'), lastX=0, lastY=0, moved=false, lastSent=0, SPEED=1.6;
   pad.addEventListener('touchstart', function(e){ var t=e.touches[0]; lastX=t.clientX; lastY=t.clientY; moved=false; e.preventDefault(); }, {passive:false});
@@ -172,24 +182,20 @@ CHIPS.forEach(function(c){
     lastX=t.clientX; lastY=t.clientY;
     if(Math.abs(dx)>2||Math.abs(dy)>2) moved=true;
     var now=Date.now();
-    if(now-lastSent>35){
-      lastSent=now;
-      api('/api/mouse', {dx:Math.round(dx*SPEED), dy:Math.round(dy*SPEED)});
-    }
+    if(now-lastSent>35){ lastSent=now; api('/api/mouse', {dx:Math.round(dx*SPEED), dy:Math.round(dy*SPEED)}); }
     e.preventDefault();
   }, {passive:false});
   pad.addEventListener('touchend', function(e){
-    if(!moved){ api('/api/mouse', {tap:true}); log('已单击', true); }
-    else { log('鼠标已移动', true); }
+    if(!moved){ api('/api/mouse', {tap:true}); flash('已单击'); }
     e.preventDefault();
   }, {passive:false});
 })();
 
-// 滚动
+/* 滚轮：位于控制面板右侧的窄竖条 */
 (function(){
-  var wheel = $('wheel'), wy=0;
-  wheel.addEventListener('touchstart', function(e){ wy=e.touches[0].clientY; e.preventDefault(); }, {passive:false});
-  wheel.addEventListener('touchmove', function(e){
+  var track = $('track'), wy=0;
+  track.addEventListener('touchstart', function(e){ wy=e.touches[0].clientY; e.preventDefault(); }, {passive:false});
+  track.addEventListener('touchmove', function(e){
     var dy = e.touches[0].clientY - wy; wy=e.touches[0].clientY;
     api('/api/mouse', {scroll: -Math.round(dy/3)});
     e.preventDefault();
@@ -199,7 +205,7 @@ function scrollBy(n){ api('/api/mouse', {scroll:n}); }
 $('sup').addEventListener('click', function(){ scrollBy(4); });
 $('sdown').addEventListener('click', function(){ scrollBy(-4); });
 
-/* ---- 主题开关 ---- */
+/* 主题 */
 function applyTheme(t){
   document.documentElement.setAttribute('data-theme', t);
   $('themeBtn').textContent = (t === 'dark') ? '浅色' : '深色';
@@ -209,18 +215,18 @@ applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dar
 $('themeBtn').addEventListener('click', function(){
   applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
 });
+if(TOKEN){ var dl=$('dashLink'); dl.href = dl.href.split('?')[0] + '?t=' + encodeURIComponent(TOKEN); }
 
-/* ---- 语音：按住说话 ---- */
+/* 语音：按住说话 */
 (function(){
   var btn = $('mic'), tip = $('voiceTip'), rec = null, recognizing = false, finalText = '';
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   function httpsUrl(){
-    var h = location.hostname || location.host.split(':')[0];
-    return 'https://' + h + ':8788' + location.pathname + (location.search || '');
+    return 'https://' + location.hostname + ':8788' + location.pathname + (location.search || '');
   }
   if(!window.isSecureContext || !SR){
     btn.classList.add('off');
-    tip.textContent = '语音需 HTTPS：点此切换到 :8788（首次需信任证书）';
+    tip.textContent = '语音需 HTTPS，点圆球切到 :8788';
     btn.addEventListener('click', function(){
       log('正在切换到 HTTPS 语音入口…');
       setTimeout(function(){ location.href = httpsUrl(); }, 350);
