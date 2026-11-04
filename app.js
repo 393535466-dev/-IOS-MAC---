@@ -10,6 +10,10 @@
  *   rating  豆瓣查电影评分
  *   system  音量±/静音、亮度（开显示设置）、截图、锁屏、清废纸篓（确认）、系统设置
  *   note    记内容到剪贴板并打开备忘录
+ *   close   关闭/退出：退出当前应用、退出指定应用、关闭窗口、关闭标签页
+ *   window  窗口管理：最小化、隐藏、全屏切换、显示桌面
+ *   media   媒体控制：播放/暂停、上一首、下一首（驱动音乐 App）
+ *   edit    编辑与导航：全选/复制/剪切/粘贴/撤销/重做/回车/刷新/后退/前进
  *
  * 智能：内置增强 NLU（动作/平台/内容类型/对象四维解析）+ 可选接真 LLM（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL，OpenAI 兼容）
  * 输入：语音输入（实时反馈）、实时联想、多场景卡片、历史可重发、回车提交
@@ -124,7 +128,7 @@ const SITES = {
 };
 const VIDEO_SITES = ['bilibili', 'youku', 'iqiyi', 'tencent', 'youtube'];
 const CONTENT_TYPES = { '预告片': ['预告片', '预告', 'trailer', 'teaser'], '正片': ['正片', '完整版', '全片'], '花絮': ['花絮', '幕后', '彩蛋'], '解说': ['解说', '影评', 'reaction'] };
-const ACTION_LABEL = { search: '搜索', play: '播放', open: '打开', rating: '查评分', system: '系统操作', note: '记备忘录', type: '应用内输入' };
+const ACTION_LABEL = { search: '搜索', play: '播放', open: '打开', rating: '查评分', system: '系统操作', note: '记备忘录', type: '应用内输入', close: '关闭/退出', window: '窗口', media: '媒体', edit: '编辑/导航' };
 
 /* ---------------- 数据层 ---------------- */
 let tasks = [];
@@ -272,6 +276,50 @@ function detectSystem(text) {
   if (/系统设置|打开设置|系统偏好|偏好设置|设置/.test(text)) return { sub: 'settings' };
   return null;
 }
+
+/* ---------------- 指令检测：关闭 / 窗口 / 媒体 / 编辑 ---------------- */
+// 关闭类：退出当前应用 / 退出指定应用 / 关闭窗口 / 关闭标签页
+function detectClose(text) {
+  const verb = /(关闭|关掉|关了|退出|quit|exit|close|结束|停掉|杀掉)/;
+  if (!verb.test(text) || /全屏|最大化|最小化|隐藏/.test(text)) return null;
+  // 明确"退出应用"
+  if (/退出应用|退出程序|退出整个应用|关闭应用|关掉应用|退出当前应用/.test(text)) return { sub: 'quit_front' };
+  const app = detectApp(text);
+  // 指定应用 + 关闭/退出（无窗口/标签页限定词）→ 退出该应用
+  if (app && !/(窗口|标签页|网页|标签|这个页)/.test(text)) {
+    return { sub: 'quit_app', app: app.key, appName: app.name };
+  }
+  if (/(标签页|网页|标签|这个网页|这个页|当前页)/.test(text)) return { sub: 'close_tab' };
+  if (/(窗口|这个窗口|当前窗口)/.test(text)) return { sub: 'close_window' };
+  // 裸 关闭/关掉/退出 → 退出当前应用（符合预期：关闭=退出当前应用/页面）
+  return { sub: 'quit_front' };
+}
+function detectWindow(text) {
+  if (/最小化|最小|收起窗口|收起|缩小窗口/.test(text)) return 'minimize';
+  if (/隐藏|藏起来|隐藏当前/.test(text)) return 'hide';
+  if (/全屏|最大化|铺满|最大化窗口|全屏显示/.test(text)) return 'fullscreen';
+  if (/显示桌面|回到桌面|回到主屏幕|回到主页|显示主屏幕/.test(text)) return 'show_desktop';
+  return null;
+}
+function detectMedia(text) {
+  if (/下一首|下首歌|后一首|切歌|换一首|切到下一首/.test(text)) return 'next';
+  if (/上一首|前一首|上一曲|切到上一首/.test(text)) return 'prev';
+  if (/播放暂停|暂停播放|暂停$|暂停音乐|停止播放|歌暂停|暂停一下|暂停歌曲|继续播放|开始播放|恢复播放|播放音乐|放歌/.test(text)) return 'playpause';
+  return null;
+}
+function detectEdit(text) {
+  if (/全选|选中全部|选择所有|全部选中/.test(text)) return 'select_all';
+  if (/复制|拷贝/.test(text)) return 'copy';
+  if (/剪切|剪下|剪贴/.test(text)) return 'cut';
+  if (/粘贴/.test(text)) return 'paste';
+  if (/撤销|反悔|退回一步|撤回/.test(text)) return 'undo';
+  if (/重做|恢复操作|重新做/.test(text)) return 'redo';
+  if (/回车|按回车|点发送|点确定|确认发送|提交表单|提交/.test(text)) return 'enter';
+  if (/刷新|重新加载|刷新页面|刷新一下/.test(text)) return 'refresh';
+  if (/后退|返回上一页|返回上页|返回|回上一页/.test(text)) return 'back';
+  if (/前进|前进一页/.test(text)) return 'forward';
+  return null;
+}
 function extractQuoted(text) {
   let m = text.match(/《(.+?)》/);
   if (m) return m[1];
@@ -338,6 +386,16 @@ function localParse(text) {
   // 1. 系统操作
   const sys = detectSystem(raw);
   if (sys) return { action: 'system', sub: sys.sub, target: null, platform: null, contentType: null, raw, source: 'rule' };
+
+  // 1.5 关闭 / 窗口 / 媒体 / 编辑 类基础指令（无需 LLM，规则秒级命中）
+  const cl = detectClose(raw);
+  if (cl) return { action: 'close', sub: cl.sub, target: cl.appName || null, app: cl.app || null, appName: cl.appName || null, platform: null, contentType: null, raw, source: 'rule' };
+  const wd = detectWindow(raw);
+  if (wd) return { action: 'window', sub: wd, target: null, platform: null, contentType: null, raw, source: 'rule' };
+  const md = detectMedia(raw);
+  if (md) return { action: 'media', sub: md, target: null, platform: null, contentType: null, raw, source: 'rule' };
+  const ed = detectEdit(raw);
+  if (ed) return { action: 'edit', sub: ed, target: null, platform: null, contentType: null, raw, source: 'rule' };
 
   // 2. 在应用里输入/写/打文字（优先于备忘录，避免"在备忘录里写..."被备忘录截获）
   {
@@ -432,7 +490,7 @@ async function callLLM(text) {
         model: cfg.model, temperature: 0.2,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName,contact}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)/send_msg(给指定联系人发消息)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字/要发送的消息正文)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=open/open_app/type/send_msg时指定目标应用名(如"浏览器"→Safari、"谷歌浏览器/Chrome"→Google Chrome、"微信"→WeChat、"WorkBuddy"、"豆包"→DoubaoWork、"备忘录"→Notes、"终端"→Terminal)，无指定应用时app=null；send_msg时默认app="微信"。打开浏览器类：默认浏览器=Safari，谷歌浏览器/Chrome=Google Chrome。\ncontact仅在action=send_msg时使用，为收信人姓名(如"张三")。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n发消息给联系人如"发微信给张三：晚点到"解析为send_msg，contact="张三",target="晚点到",app="微信"。\n只输出JSON，不要解释。' },
+          { role: 'system', content: '你是龙虾脑的指令解析器。把用户自然语言解析为JSON：{action,target,platform,contentType,sub,app,appName,contact}。\naction取值：search(搜索)/play(播放视频)/open(打开)/rating(查评分)/system(系统操作)/note(记备忘录)/type(在应用里输入文字)/send_msg(给指定联系人发消息)/close(关闭或退出，sub=quit_front退出当前应用、quit_app退出指定应用、close_window关闭窗口、close_tab关闭标签页)/window(窗口操作，sub=minimize最小化、hide隐藏、fullscreen全屏、show_desktop显示桌面)/media(媒体控制，sub=playpause播放暂停、next下一首、prev上一首)/edit(编辑与导航，sub=select_all全选、copy复制、cut剪切、paste粘贴、undo撤销、redo重做、enter回车发送、refresh刷新、back后退、forward前进)。\ntarget是主要对象(影片名/关键词/应用名/要记的内容/要输入的文字/要发送的消息正文)或null。\nplatform取值baidu/google/bilibili/youku/iqiyi/tencent/youtube/douban/zhihu/weibo/github/taobao/jd或null，搜索默认baidu，播放默认bilibili，查评分默认douban。\ncontentType取值预告片/正片/花絮/解说或null。\nsub在action=open时为open_app/open_folder/open_site/open_url，action=system时为volume_up/volume_down/mute/brightness/screenshot/lock/trash/settings。\napp/appName在action=open/open_app/type/send_msg时指定目标应用名(如"浏览器"→Safari、"谷歌浏览器/Chrome"→Google Chrome、"微信"→WeChat、"WorkBuddy"、"豆包"→DoubaoWork、"备忘录"→Notes、"终端"→Terminal)，无指定应用时app=null；send_msg时默认app="微信"。打开浏览器类：默认浏览器=Safari，谷歌浏览器/Chrome=Google Chrome。\ncontact仅在action=send_msg时使用，为收信人姓名(如"张三")。\n复合指令如"打开微信然后输入你好"解析为type动作，app="微信",target="你好"。\n发消息给联系人如"发微信给张三：晚点到"解析为send_msg，contact="张三",target="晚点到",app="微信"。\n只输出JSON，不要解释。' },
           { role: 'user', content: text },
         ],
       }),
@@ -446,7 +504,7 @@ async function callLLM(text) {
 // 直输模式下的「指令逃逸」：用户输入的其实是一条明确指令时，按指令执行，
 // 而不是当成文字填进输入框。判定刻意保守：只认以明确动作词开头的短句，
 // 且排除 type（输入/写）——否则「写一份周报」会被剥词后误当指令。
-const ESCAPE_CMD_RE = /^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便|来个?)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|抓屏|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|清空垃圾|清垃圾|系统设置|打开设置|系统偏好|偏好设置|搜索|搜一下|搜搜|搜个|检索|查询|查一下|查查|查找|百度一下|谷歌一下|播放|放一下|听歌|听一下|发微信给|发消息给|发短信给|发信息给|给.+发(?:微信|消息|短信|信息)|用微信给|提醒我|记到备忘录)/;
+const ESCAPE_CMD_RE = /^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便|来个?)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|抓屏|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|清空垃圾|清垃圾|系统设置|打开设置|系统偏好|偏好设置|搜索|搜一下|搜搜|搜个|检索|查询|查一下|查查|查找|百度一下|谷歌一下|播放|放一下|听歌|听一下|发微信给|发消息给|发短信给|发信息给|给.+发(?:微信|消息|短信|信息)|用微信给|提醒我|记到备忘录|关闭|关掉|退出|最小化|隐藏|全屏|切换全屏|暂停|下一首|上一首|切歌|全选|复制|剪切|粘贴|撤销|重做|刷新|返回|后退|前进|回车|显示桌面)/;
 function commandEscape(raw) {
   const s = (raw || '').trim();
   if (!s || s.length > 60 || !ESCAPE_CMD_RE.test(s)) return null;
@@ -476,6 +534,10 @@ function describeIntent(it) {
       const map = { volume_up: '调大音量', volume_down: '调小音量', mute: '静音', brightness: '调节亮度', screenshot: '截屏', lock: '锁屏', trash: '清空废纸篓', settings: '打开系统设置' };
       return '系统操作：' + (map[it.sub] || it.sub);
     }
+    case 'close': return { quit_front: '退出当前应用', quit_app: '退出「' + (it.appName || it.app || '') + '」', close_window: '关闭当前窗口', close_tab: '关闭当前标签页' }[it.sub] || '关闭';
+    case 'window': return { minimize: '最小化当前窗口', hide: '隐藏当前应用', fullscreen: '切换全屏', show_desktop: '显示桌面' }[it.sub] || '窗口操作';
+    case 'media': return { playpause: '播放/暂停', next: '下一首', prev: '上一首' }[it.sub] || '媒体控制';
+    case 'edit': return { select_all: '全选', copy: '复制', cut: '剪切', paste: '粘贴', undo: '撤销', redo: '重做', enter: '回车/发送', refresh: '刷新', back: '后退', forward: '前进' }[it.sub] || '编辑操作';
     case 'note': return '记到备忘录：「' + (it.target || '') + '」';
     case 'send_msg': return '发' + (it.appName || '微信') + '给「' + (it.contact || '') + '」：「' + (it.target || '') + '」';
     case 'type': return '在「' + (it.appName || it.app || '') + '」里输入：「' + (it.target || '') + '」';
@@ -543,12 +605,77 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const sh = (cmd) => new Promise((res, rej) => {
   exec(cmd, { timeout: 9000 }, (err, stdout, stderr) => err ? rej(Object.assign(err, { stderr })) : res(stdout.trim()));
 });
+// AppleScript 键击：mod 为 'command' / 'command,shift' / 'control,command'；
+// key 为单个字符/'return'（keystroke）或纯数字（key code，用于功能键如 F11=103）
+function keystroke(mod, key) {
+  const using = mod ? ` using {${mod.split(',').map(m => m + ' down').join(', ')}}` : '';
+  const k = /^\d+$/.test(key) ? `key code ${key}` : `keystroke "${key}"`;
+  return sh(`osascript -e 'tell application "System Events" to ${k}${using}'`);
+}
+// 需要辅助功能权限的键击：先探测权限，无权限则打开设置引导
+async function runKeystroke(mod, key, okNote) {
+  const hasPermission = await checkAccessibility();
+  if (!hasPermission) {
+    await openAccessibilityPrefs();
+    return { note: '检测到辅助功能未授权，已自动打开系统设置。请在「隐私与安全 → 辅助功能」中添加并开启当前终端后重试。', needPermission: true };
+  }
+  await keystroke(mod, key);
+  return { note: okNote };
+}
+// 媒体控制：优先驱动正在运行的主流音乐 App，兜底发送系统媒体键
+async function mediaControl(sub) {
+  const verb = { playpause: 'playpause', next: 'next track', prev: 'previous track' }[sub];
+  if (!verb) return '未知媒体操作';
+  const label = sub === 'playpause' ? '播放/暂停' : sub === 'next' ? '下一首' : '上一首';
+  const apps = ['Spotify', 'Music', 'NeteaseMusic', 'QQMusic'];
+  for (const app of apps) {
+    try {
+      const isRun = (await sh(`osascript -e 'tell application "System Events" to get exists process "${app}"' 2>/dev/null`)).trim();
+      if (isRun === 'true') {
+        await sh(`osascript -e 'tell application "${app}" to ${verb}'`).catch(() => {});
+        return `已对「${app}」执行${label}`;
+      }
+    } catch (e) {}
+  }
+  // 兜底：系统媒体键（需辅助功能）
+  try {
+    const code = sub === 'next' ? 101 : sub === 'prev' ? 98 : 100;
+    const hasPermission = await checkAccessibility();
+    if (!hasPermission) { await openAccessibilityPrefs(); return '未检测到正在播放的音乐 App，且辅助功能未授权（已打开设置）。播放/暂停依赖 Spotify / 音乐 / 网易云 / QQ音乐，请先授权后再试。'; }
+    await sh(`osascript -e 'tell application "System Events" to key code ${code}'`);
+    return '已发送系统媒体键（未检测到常驻音乐 App）';
+  } catch (e) {
+    return '未检测到正在播放的音乐 App（播放/暂停依赖 Spotify / 音乐 / 网易云 / QQ音乐）';
+  }
+}
 function setStage(t, i, state, note) { t.stages[i].state = state; if (note) t.stages[i].note = note; save(); }
 function fail(t, i, msg) { setStage(t, i, 'failed', msg); t.status = 'failed'; t.error = msg; t.finishedAt = Date.now(); save(); console.log(`[FAIL] ${t.id}: ${msg}`); }
 
 function planText(it) {
   switch (it.action) {
     case 'system': return { volume_up: 'osascript 调高系统音量 +10', volume_down: 'osascript 调低系统音量 -10', mute: 'osascript 静音', brightness: '打开「显示设置」', screenshot: 'screencapture 截图保存到桌面', lock: '调用 CGSession 锁屏', trash: '高危操作，提示用户手动确认', settings: '打开系统设置' }[it.sub];
+    case 'close': return {
+      quit_front: 'osascript 取前台应用 → quit 退出',
+      quit_app: 'osascript quit application "' + (it.app || it.appName) + '"',
+      close_window: 'System Events 发送 Cmd+W 关闭窗口',
+      close_tab: 'System Events 发送 Cmd+W 关闭标签页'
+    }[it.sub];
+    case 'window': return {
+      minimize: 'System Events 发送 Cmd+M 最小化',
+      hide: 'System Events 发送 Cmd+H 隐藏',
+      fullscreen: 'System Events 发送 Ctrl+Cmd+F 切换全屏',
+      show_desktop: 'System Events 触发显示桌面'
+    }[it.sub];
+    case 'media': return {
+      playpause: 'AppleScript 控制音乐 App 播放/暂停',
+      next: 'AppleScript 控制音乐 App 下一首',
+      prev: 'AppleScript 控制音乐 App 上一首'
+    }[it.sub];
+    case 'edit': return {
+      select_all: 'System Events 发送 Cmd+A', copy: 'System Events 发送 Cmd+C', cut: 'System Events 发送 Cmd+X',
+      paste: 'System Events 发送 Cmd+V', undo: 'System Events 发送 Cmd+Z', redo: 'System Events 发送 Cmd+Shift+Z',
+      enter: 'System Events 发送 Return', refresh: 'System Events 发送 Cmd+R', back: 'System Events 发送 Cmd+[', forward: 'System Events 发送 Cmd+]'
+    }[it.sub];
     case 'note': return '把内容写入剪贴板 → 打开备忘录 → 提示粘贴';
     case 'type': return it.app
       ? `open -a "${it.app}" → 等待 1.5s → pbcopy 写入剪贴板 → osascript 模拟 Cmd+V 粘贴`
@@ -586,7 +713,7 @@ async function runTask(t) {
     it._desc = describeIntent(it);
     t.intent = it; t.movie = it.target; t.platform = it.platform; t.action = it.action; save();
 
-    if (it.action !== 'system' && it.action !== 'open_site' && !it.target) {
+    if (it.action !== 'system' && it.action !== 'open_site' && it.action !== 'close' && it.action !== 'window' && it.action !== 'media' && it.action !== 'edit' && !it.target) {
       return fail(t, 0, '没识别到操作对象，试试「百度一下 Python 教程」「打开微信」「截个屏」');
     }
     setStage(t, 0, 'done', (escaped ? '识别为指令 · 已自动退出直输 · ' : '') + '理解：' + it._desc + ' · 解析：' + (it.source === 'llm' ? '大模型' : it.source === 'direct' ? '直输（跳过解析）' : '规则引擎'));
@@ -609,6 +736,37 @@ async function runTask(t) {
         else if (sub === 'trash') { execNote = result = '清空废纸篓属高危操作，请到 Mac 手动确认（演示版不自动执行）'; }
         else if (sub === 'settings') { await sh(`open "x-apple.systempreferences:"`); execNote = result = '已打开系统设置'; }
         else throw new Error('未知系统操作');
+      } else if (it.action === 'close') {
+        const sub = it.sub;
+        if (sub === 'quit_app') {
+          const realName = resolveApp(it.app);
+          await sh(`osascript -e 'quit application "${realName}"'`);
+          execNote = result = '已退出应用：' + (it.appName || realName);
+        } else if (sub === 'quit_front') {
+          const front = (await sh(`osascript -e 'tell application "System Events" to get name of first process whose frontmost is true' 2>&1`)).trim();
+          await sh(`osascript -e 'quit application "${front}"'`).catch(() => {});
+          execNote = result = '已退出当前应用：' + front;
+        } else if (sub === 'close_window' || sub === 'close_tab') {
+          const r = await runKeystroke('command', 'w', sub === 'close_tab' ? '已关闭当前标签页（Cmd+W）' : '已关闭当前窗口（Cmd+W）');
+          execNote = result = r.note; if (r.needPermission) t.needPermission = true;
+        } else throw new Error('未知关闭操作');
+      } else if (it.action === 'window') {
+        const sub = it.sub;
+        if (sub === 'minimize') { const r = await runKeystroke('command', 'm', '已最小化当前窗口（Cmd+M）'); execNote = result = r.note; if (r.needPermission) t.needPermission = true; }
+        else if (sub === 'hide') { const r = await runKeystroke('command', 'h', '已隐藏当前应用（Cmd+H）'); execNote = result = r.note; if (r.needPermission) t.needPermission = true; }
+        else if (sub === 'fullscreen') { const r = await runKeystroke('control,command', 'f', '已切换全屏状态（Ctrl+Cmd+F）'); execNote = result = r.note; if (r.needPermission) t.needPermission = true; }
+        else if (sub === 'show_desktop') { const r = await runKeystroke(null, '103', '已尝试显示桌面（F11 功能键）'); execNote = result = r.note; if (r.needPermission) t.needPermission = true; }
+        else throw new Error('未知窗口操作');
+      } else if (it.action === 'media') {
+        const m = await mediaControl(it.sub);
+        execNote = result = m;
+      } else if (it.action === 'edit') {
+        const sub = it.sub;
+        const map = { select_all: ['command', 'a'], copy: ['command', 'c'], cut: ['command', 'x'], paste: ['command', 'v'], undo: ['command', 'z'], redo: ['command,shift', 'z'], enter: [null, 'return'], refresh: ['command', 'r'], back: ['command', '['], forward: ['command', ']'] };
+        const m = map[sub];
+        if (!m) throw new Error('未知编辑操作');
+        const r = await runKeystroke(m[0], m[1], '已执行：' + ({ select_all: '全选', copy: '复制', cut: '剪切', paste: '粘贴', undo: '撤销', redo: '重做', enter: '回车/发送', refresh: '刷新', back: '后退', forward: '前进' }[sub]));
+        execNote = result = r.note; if (r.needPermission) t.needPermission = true;
       } else if (it.action === 'note') {
         const tmp = path.join(os.tmpdir(), 'lb_note_' + Date.now() + '.txt');
         fs.writeFileSync(tmp, String(it.target || ''), 'utf8');
@@ -897,6 +1055,14 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
     <button class="app-tile" onclick="openApp('哔哩哔哩','B站')"><span class="app-ic" style="background:#FB7299">B</span><span class="app-lb">B站</span></button>
     <button class="app-tile" onclick="openApp('网易云音乐','网易云音乐')"><span class="app-ic" style="background:#E03A3A">音</span><span class="app-lb">网易云</span></button>
   </div>
+  <div style="display:flex;gap:8px;padding:0 12px 8px;overflow-x:auto">
+    <button class="cmd-chip" onclick="quickSend('关闭')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">关闭当前应用</button>
+    <button class="cmd-chip" onclick="quickSend('最小化')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">最小化窗口</button>
+    <button class="cmd-chip" onclick="quickSend('全屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">切换全屏</button>
+    <button class="cmd-chip" onclick="quickSend('锁屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">锁屏</button>
+    <button class="cmd-chip" onclick="quickSend('截个屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">截图</button>
+    <button class="cmd-chip" onclick="quickSend('刷新')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">刷新</button>
+  </div>
   <div class="mode-bar" id="modeBar">
     <span class="mode-txt" id="modeText"><b>指令模式</b> · 输入会被解析成任务</span>
     <button class="mode-btn" id="modeBtn" onclick="toggleDirect()" type="button">连续直输</button>
@@ -924,7 +1090,7 @@ var directLock=false;   // 用户显式开启的连续直输
 var directLabel='';
 function isDirect(){ return directLock || directLeft>0; }
 // 客户端即时判定：直输状态下说的是短指令，立刻按指令执行并退出（服务端 commandEscape 为兜底）
-var QUICK_CMD=/^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|系统设置|打开设置|搜索|搜一下|搜搜|检索|查询|查一下|查找|百度一下|谷歌一下|播放|放一下|听歌|发微信给|发消息给|通知.+[:：]|告诉.+[:：]|给.+发(?:微信|消息|短信|信息)|提醒我|记到备忘录)/;
+var QUICK_CMD=/^(?:请|帮我|麻烦|给我|能不能|可以|我想|我要|想要|想|把|将|顺便)?\s*(?:打开|启动|唤起|截屏|截图|截个屏|截一张|拍个照|锁屏|锁定屏幕|锁电脑|静音|调大|调小|大声|小声|音量|声音|亮度|清空废纸篓|清废纸篓|系统设置|打开设置|搜索|搜一下|搜搜|检索|查询|查一下|查找|百度一下|谷歌一下|播放|放一下|听歌|发微信给|发消息给|通知.+[:：]|告诉.+[:：]|给.+发(?:微信|消息|短信|信息)|提醒我|记到备忘录|关闭|关掉|退出|最小化|隐藏|全屏|切换全屏|暂停|下一首|上一首|切歌|全选|复制|剪切|粘贴|撤销|重做|刷新|返回|后退|前进|回车|显示桌面)/;
 function looksLikeCmd(s){ return s.length<=28 && QUICK_CMD.test(s); }
 function esc(s){return (s||'').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 

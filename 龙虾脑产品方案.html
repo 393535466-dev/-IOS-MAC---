@@ -122,10 +122,15 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td>语音规范化</td><td>口语 → 清晰指令（去口水词、动词规范、片名补《》）</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>复合指令</td><td>「打开微信——输入你好」逐段执行</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>应用名识别</td><td>长词优先匹配，中文名 → 真实应用名归一化</td><td class="ok">✅ 已实现</td></tr>
-    <tr><td rowspan="4"><b>Mac 操控</b></td><td>打开应用 / 文件 / 网址</td><td>open 动作，支持文件夹、网站、URL</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="9"><b>Mac 操控</b></td><td>打开应用 / 文件 / 网址</td><td>open 动作，支持文件夹、网站、URL</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>任意应用自动输入</td><td>type：打开 → 粘贴，微信 / 豆包 / WorkBuddy / 浏览器等</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>系统操作</td><td>音量 ± / 静音 / 亮度 / 截图 / 锁屏 / 清废纸篓 / 系统设置</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>任意平台搜索</td><td>百度 / Google / B站 / 优酷 / 腾讯视频 / YouTube / 豆瓣 / 知乎 / 微博 / GitHub / 淘宝 / 京东</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>关闭 / 退出</td><td>退出当前应用（Cmd+Q）、退出指定应用（「关闭微信」）、关闭窗口 / 标签页（Cmd+W）；退出应用无需辅助功能授权</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>窗口管理</td><td>最小化（Cmd+M）、隐藏当前应用（Cmd+H）、全屏切换（Ctrl+Cmd+F）、显示桌面（需授权）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>媒体控制</td><td>播放 / 暂停、上一首、下一首（驱动 Spotify / 音乐 / 网易云 / QQ音乐，或系统媒体键）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>编辑与导航</td><td>全选 / 复制 / 剪切 / 粘贴 / 撤销 / 重做 / 回车发送 / 刷新 / 后退 / 前进（AppleScript 键击）</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>快捷指令芯片</td><td>手机页底部一排芯片：关闭当前应用 / 最小化 / 全屏 / 锁屏 / 截图 / 刷新，一键触发</td><td class="ok">✅ 已实现</td></tr>
     <tr><td rowspan="2"><b>通讯</b></td><td>一句话发微信</td><td>「给 X 发微信：内容」→ 搜联系人 → 进会话 → 发送</td><td class="ok">✅ 已实现</td></tr>
     <tr><td>发短信</td><td>Messages，复用输入链路</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>鼠标控制</b></td><td>手机触控板</td><td>手机端触控板驱动 Mac 光标移动 / 点击（CoreGraphics，零依赖）；面板为 flex 固定首块 + visualViewport 补偿，软键盘弹出也不被顶出屏幕</td><td class="ok">✅ 已实现</td></tr>
