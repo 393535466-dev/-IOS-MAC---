@@ -936,18 +936,25 @@ textarea:focus{border-color:#D85A30}
 /* ---------------- 手机任务页 ---------------- */
 const MOBILE_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>龙虾脑</title><style>
+<title>龙虾脑</title><script>try{var _t=localStorage.getItem('lb_theme')||'light';document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script><style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-:root{--bg:#fff;--fg:#1A1A1A;--muted:#888;--line:#E5E5E5;--card:#F7F7F7;--accent:#1A1A1A}
+:root{--bg:#fff;--fg:#1A1A1A;--muted:#888;--line:#E5E5E5;--card:#F7F7F7;--accent:#1A1A1A;--icon-fg:#fff;--fab-bg:rgba(255,255,255,.9);--fab-fg:#999;--pad:#EDEDED;--knob:#fff;--knob-bd:#CCC}
+[data-theme="dark"]{--bg:#0B0B0B;--fg:#F2F2F2;--muted:#9A9A9A;--line:#2A2A2A;--card:#1A1A1A;--accent:#F2F2F2;--icon-fg:#0B0B0B;--fab-bg:rgba(28,28,28,.86);--fab-fg:#BBB;--pad:#222;--knob:#333;--knob-bd:#444}
 html,body{height:100%;overflow:hidden}
 body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--fg);line-height:1.6;position:fixed;inset:0;width:100%;height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .main{flex:1;min-height:0;overflow-y:auto;padding:12px 18px 10px;display:flex;flex-direction:column;-webkit-overflow-scrolling:touch}
 .voice-area{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 0 16px}
-.mic-btn{width:80px;height:80px;border-radius:50%;border:none;background:var(--accent);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.15);transition:transform .15s;position:relative;-webkit-user-select:none;user-select:none}
-.mic-btn svg{width:30px;height:30px;fill:#fff}
-.mic-btn.recording{transform:scale(1.1);box-shadow:0 4px 24px rgba(0,0,0,.25)}
-.mic-btn.recording::before{content:'';position:absolute;inset:-10px;border-radius:50%;border:2px solid rgba(0,0,0,.2);animation:ripple 1.2s infinite}
-.mic-btn.disabled{background:#CCC;box-shadow:none;cursor:default}
+.mic-btn{width:80px;height:80px;border-radius:50%;border:none;cursor:pointer;position:relative;flex-shrink:0;-webkit-user-select:none;user-select:none;display:flex;align-items:center;justify-content:center;overflow:hidden;
+  background:radial-gradient(circle at 33% 27%, #A98CFF 0%, #7B5BFF 32%, #5B7CF5 64%, #46C8E8 100%);
+  box-shadow:0 6px 20px rgba(91,92,245,.40), inset 0 2px 6px rgba(255,255,255,.45), inset 0 -7px 14px rgba(0,0,0,.22);
+  transition:transform .15s}
+.mic-btn::after{content:'';position:absolute;top:11px;left:19px;width:32px;height:20px;border-radius:50%;background:radial-gradient(circle at 40% 35%, rgba(255,255,255,.9), rgba(255,255,255,0) 70%);pointer-events:none}
+.orb{position:relative;display:flex;gap:7px;align-items:center;justify-content:center;z-index:1}
+.orb-pill{width:6px;height:27px;border-radius:4px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.mic-btn.recording{transform:scale(1.1);box-shadow:0 6px 28px rgba(91,92,245,.6), inset 0 2px 6px rgba(255,255,255,.45), inset 0 -7px 14px rgba(0,0,0,.22)}
+.mic-btn.recording::before{content:'';position:absolute;inset:-10px;border-radius:50%;border:2px solid rgba(123,91,255,.35);animation:ripple 1.2s infinite}
+.mic-btn.disabled{background:#B9B9B9;box-shadow:none;cursor:default}
+.mic-btn.disabled::after{display:none}
 @keyframes ripple{0%{transform:scale(1);opacity:.5}100%{transform:scale(1.5);opacity:0}}
 .mic-label{margin-top:12px;font-size:13px;color:var(--muted);text-align:center;min-height:20px}
 .mic-label.recording{color:var(--fg);font-weight:500}
@@ -956,8 +963,11 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .status-area{margin-top:4px}
 .task-card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:8px}
 .task-card .echo{font-size:14px;font-weight:500;color:var(--fg);margin-bottom:6px}
-.understand{background:#EEE;border-radius:8px;padding:8px 12px;font-size:12px;color:#555;margin:6px 0}
+.understand{background:var(--card);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--muted);margin:6px 0}
 .understand b{font-weight:600;color:var(--fg)}
+.cmd-chip{flex:0 0 auto;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--card);font-size:13px;color:var(--fg);white-space:nowrap;cursor:pointer;font-family:inherit}
+.cmd-chip:active{background:var(--accent);color:var(--icon-fg)}
+.app-ic svg{width:26px;height:26px;display:block}
 .stage-row{display:flex;align-items:flex-start;gap:8px;padding:5px 0}
 .stage-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:3px;background:#DDD;transition:background .3s}
 .stage-dot.done{background:#555}.stage-dot.running{background:var(--fg);animation:pulse 1s infinite}.stage-dot.failed{background:#999}
@@ -982,7 +992,7 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .app-tile{flex-shrink:0;width:54px;display:flex;flex-direction:column;align-items:center;gap:4px;background:none;border:none;padding:0;font-family:inherit;cursor:pointer}
 .app-ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12);transition:transform .12s}
 .app-tile:active .app-ic{transform:scale(.9)}
-.app-lb{font-size:11px;color:#666;white-space:nowrap}
+.app-lb{font-size:11px;color:var(--muted);white-space:nowrap}
 .mode-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:6px 10px;border-radius:10px;background:var(--card);border:1px solid var(--line);font-size:12px;color:#666}
 .mode-bar.direct{background:#1A1A1A;border-color:#1A1A1A;color:#fff}
 .mode-txt{flex:1;line-height:1.35}
@@ -992,24 +1002,31 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 .input-bar{display:flex;gap:8px;align-items:center}
 .input-bar input{flex:1;border:1px solid var(--line);border-radius:20px;padding:10px 14px;font-size:15px;font-family:inherit;outline:none;background:var(--card);transition:border-color .15s}
 .input-bar input:focus{border-color:var(--fg);background:var(--bg)}
-.send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
+.send-btn{width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:var(--icon-fg);cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .15s}
 .send-btn:active{opacity:.7}
-.send-btn svg{width:18px;height:18px;fill:#fff}
-.dash-fab{position:absolute;top:8px;right:14px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
-.cfg-fab{position:absolute;top:8px;right:62px;font-size:11px;color:#999;text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.9);z-index:51}
+.send-btn svg{width:18px;height:18px;fill:var(--icon-fg)}
+.dash-fab{position:absolute;top:8px;right:14px;font-size:11px;color:var(--fab-fg);text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:var(--fab-bg);z-index:51}
+.cfg-fab{position:absolute;top:8px;right:62px;font-size:11px;color:var(--fab-fg);text-decoration:none;padding:3px 10px;border:1px solid var(--line);border-radius:12px;background:var(--fab-bg);z-index:51}
+.theme-switch{position:absolute;top:9px;left:14px;width:40px;height:22px;display:inline-block;z-index:52;cursor:pointer}
+.theme-switch input{opacity:0;width:0;height:0;margin:0}
+.theme-switch .slider{position:absolute;inset:0;background:#C8C8C8;border-radius:999px;transition:.2s}
+.theme-switch .slider::before{content:'';position:absolute;width:16px;height:16px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.theme-switch input:checked + .slider{background:#1A1A1A}
+.theme-switch input:checked + .slider::before{transform:translateX(18px)}
 .topbar{position:relative;flex-shrink:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 14px;box-sizing:border-box;margin:0}
 .trackpad-title{font-size:12px;color:#888;margin-bottom:8px;text-align:center}
 .pad-row{display:flex;gap:10px;align-items:stretch;height:clamp(110px,20dvh,160px)}
-.trackpad{position:relative;flex:1;height:100%;background:#EDEDED;border-radius:10px;overflow:hidden;touch-action:none}
-.trackpad-hint{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:#aaa;font-size:12px;pointer-events:none}
+.trackpad{position:relative;flex:1;height:100%;background:var(--pad);border-radius:10px;overflow:hidden;touch-action:none}
+.trackpad-hint{position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;color:var(--muted);font-size:12px;pointer-events:none}
 .wheel{width:58px;flex-shrink:0;height:100%;display:flex;flex-direction:column;gap:4px;touch-action:none}
-.wheel-btn{height:28px;flex-shrink:0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:#555;font-size:15px;font-family:inherit;cursor:pointer;line-height:1}
-.wheel-btn:active{background:var(--accent);color:#fff}
-.wheel-track{position:relative;flex:1;min-height:0;background:#EDEDED;border-radius:8px;overflow:hidden;touch-action:none}
-.wheel-knob{position:absolute;left:7px;right:7px;height:24px;top:50%;transform:translateY(-50%);border-radius:6px;background:#fff;border:1px solid #CCC;box-shadow:0 1px 3px rgba(0,0,0,.12);pointer-events:none}
-.wheel-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#AAA;font-size:10px;line-height:1.45;pointer-events:none}
+.wheel-btn{height:28px;flex-shrink:0;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--muted);font-size:15px;font-family:inherit;cursor:pointer;line-height:1}
+.wheel-btn:active{background:var(--accent);color:var(--icon-fg)}
+.wheel-track{position:relative;flex:1;min-height:0;background:var(--pad);border-radius:8px;overflow:hidden;touch-action:none}
+.wheel-knob{position:absolute;left:7px;right:7px;height:24px;top:50%;transform:translateY(-50%);border-radius:6px;background:var(--knob);border:1px solid var(--knob-bd);box-shadow:0 1px 3px rgba(0,0,0,.12);pointer-events:none}
+.wheel-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:10px;line-height:1.45;pointer-events:none}
 </style></head><body>
 <div class="topbar" id="topbar">
+  <label class="theme-switch" id="themeSwitch" title="深色 / 浅色切换"><input type="checkbox" id="themeToggle" onchange="toggleTheme()"><span class="slider"></span></label>
   <div class="trackpad-title">鼠标控制（触控板 · 滚轮）</div>
   <a href="/config" class="cfg-fab" target="_blank">配置</a>
   <a href="/dashboard" class="dash-fab" target="_blank">看板</a>
@@ -1029,9 +1046,7 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 </div>
 <div class="main" id="main">
   <div class="voice-area">
-    <button class="mic-btn" id="mic" type="button">
-      <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.91-3c-.49 0-.9.36-.98.85C16.52 14.2 14.47 16 12 16s-4.52-1.79-4.93-4.15c-.08-.49-.49-.85-.98-.85-.61 0-1.09.54-.98 1.14C5.66 15.22 8.03 17.5 11 17.92V20H8c-.55 0-1 .45-1 1s.45 1 1 1h8c.55 0 1-.45 1-1s-.45-1-1-1h-3v-2.08c2.97-.42 5.34-2.7 5.89-5.78.11-.6-.37-1.14-.98-1.14z"/></svg>
-    </button>
+    <button class="mic-btn" id="mic" type="button"><span class="orb"><span class="orb-pill"></span><span class="orb-pill"></span></span></button>
     <div class="mic-label" id="micLabel">按住说话</div>
     <div class="mic-hint" id="micHint"></div>
   </div>
@@ -1045,23 +1060,14 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
   <button onclick="doUnlock()" style="margin-top:12px;width:100%;max-width:300px;padding:12px;border:none;border-radius:10px;background:#1A1A1A;color:#fff;font-size:15px;cursor:pointer">解锁</button>
 </div>
 <div class="bottom-bar">
-  <div class="apps">
-    <button class="app-tile" onclick="openApp('微信','微信')"><span class="app-ic" style="background:#07C160">微</span><span class="app-lb">微信</span></button>
-    <button class="app-tile" onclick="openApp('豆包','豆包')"><span class="app-ic" style="background:#5B6CF5">豆</span><span class="app-lb">豆包</span></button>
-    <button class="app-tile" onclick="openApp('抖音','抖音')"><span class="app-ic" style="background:#161823">抖</span><span class="app-lb">抖音</span></button>
-    <button class="app-tile" onclick="openApp('WorkBuddy','WorkBuddy')"><span class="app-ic" style="background:#FF5900">W</span><span class="app-lb">WorkBuddy</span></button>
-    <button class="app-tile" onclick="openApp('浏览器','浏览器')"><span class="app-ic" style="background:#1E9BF0">S</span><span class="app-lb">浏览器</span></button>
-    <button class="app-tile" onclick="openApp('备忘录','备忘录')"><span class="app-ic" style="background:#F5A623">备</span><span class="app-lb">备忘录</span></button>
-    <button class="app-tile" onclick="openApp('哔哩哔哩','B站')"><span class="app-ic" style="background:#FB7299">B</span><span class="app-lb">B站</span></button>
-    <button class="app-tile" onclick="openApp('网易云音乐','网易云音乐')"><span class="app-ic" style="background:#E03A3A">音</span><span class="app-lb">网易云</span></button>
-  </div>
+  <div class="apps" id="apps"></div>
   <div style="display:flex;gap:8px;padding:0 12px 8px;overflow-x:auto">
-    <button class="cmd-chip" onclick="quickSend('关闭')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">关闭当前应用</button>
-    <button class="cmd-chip" onclick="quickSend('最小化')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">最小化窗口</button>
-    <button class="cmd-chip" onclick="quickSend('全屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">切换全屏</button>
-    <button class="cmd-chip" onclick="quickSend('锁屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">锁屏</button>
-    <button class="cmd-chip" onclick="quickSend('截个屏')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">截图</button>
-    <button class="cmd-chip" onclick="quickSend('刷新')" style="flex:0 0 auto;padding:7px 12px;border:1px solid #E2E2E2;border-radius:999px;background:#fff;font-size:13px;color:#333;white-space:nowrap;cursor:pointer">刷新</button>
+    <button class="cmd-chip" onclick="quickSend('关闭')">关闭当前应用</button>
+    <button class="cmd-chip" onclick="quickSend('最小化')">最小化窗口</button>
+    <button class="cmd-chip" onclick="quickSend('全屏')">切换全屏</button>
+    <button class="cmd-chip" onclick="quickSend('锁屏')">锁屏</button>
+    <button class="cmd-chip" onclick="quickSend('截个屏')">截图</button>
+    <button class="cmd-chip" onclick="quickSend('刷新')">刷新</button>
   </div>
   <div class="mode-bar" id="modeBar">
     <span class="mode-txt" id="modeText"><b>指令模式</b> · 输入会被解析成任务</span>
@@ -1212,6 +1218,20 @@ function consumeDirect(){
   if(directLeft>0){ directLeft--; if(directLeft<=0)setDirect(false); }
 }
 function toggleDirect(){ setDirect(!isDirect(),'',false); }
+/* ---- 应用快捷图标（彩色圆角方块 + 白色 SVG 品牌图标）---- */
+var QUICK_APPS=[
+ {n:'微信',l:'微信',c:'#07C160',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M9 3.5C5.4 3.5 2.5 5.9 2.5 8.9c0 1.6.9 3 2.3 3.9L3.8 14l2.2-1.1c.7.2 1.4.3 2.2.3h.4c-.1-.5-.2-1-.2-1.5 0-3 2.8-5.3 6.2-5.3h.5C14.3 5.6 11.9 3.5 9 3.5z"/><path d="M21 13.2c0-2.4-2.3-4.3-5.2-4.3s-5.2 1.9-5.2 4.3 2.3 4.3 5.2 4.3c.6 0 1.2-.1 1.7-.2l1.6.8-.4-1.4c1.1-.7 1.9-1.8 1.9-2.5z"/></svg>'},
+ {n:'豆包',l:'豆包',c:'#5B6CF5',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2l1.9 5.3L19 9l-5.1 1.7L12 16l-1.9-5.3L5 9l5.1-1.7z"/><path d="M18 13l.9 2.5L21.5 16l-2.6.9L18 19l-.9-2.6L14.5 16l2.6-.9z" opacity=".75"/></svg>'},
+ {n:'抖音',l:'抖音',c:'#161823',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M14 3c.4 2.1 1.8 3.7 3.8 4.1V10c-1.3 0-2.6-.4-3.8-1.2V15a5 5 0 1 1-5-5c.3 0 .7 0 1 .1V13a1.9 1.9 0 1 0 1 1.7V3z"/></svg>'},
+ {n:'WorkBuddy',l:'WorkBuddy',c:'#FF5900',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-8l-4 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><circle cx="9" cy="11" r="1.4" fill="#FF5900"/><circle cx="15" cy="11" r="1.4" fill="#FF5900"/></svg>'},
+ {n:'浏览器',l:'浏览器',c:'#1E9BF0',g:'<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7"><circle cx="12" cy="12" r="9"/><path d="M15.2 8.8l-2 5.4-5.4 2 2-5.4z" fill="#fff" stroke="none"/></svg>'},
+ {n:'备忘录',l:'备忘录',c:'#F5A623',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M6 3h9l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M9 9h6M9 13h6M9 17h4" stroke="#F5A623" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>'},
+ {n:'哔哩哔哩',l:'B站',c:'#FB7299',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M8 3.5L6 1.5M16 3.5l2-2" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/><rect x="3" y="4.5" width="18" height="13" rx="3"/><path d="M9.5 9.5l4.2 2.3-4.2 2.3z" fill="#FB7299"/></svg>'},
+ {n:'网易云音乐',l:'网易云',c:'#E03A3A',g:'<svg viewBox="0 0 24 24" fill="#fff"><path d="M9 4v10.6a3 3 0 1 0 2 2.8V8l7-2.2V14a3 3 0 1 0 2 2.8V4z"/></svg>'}
+];
+function renderApps(){var box=document.getElementById('apps');if(!box)return;box.innerHTML=QUICK_APPS.map(function(a){return '<button class="app-tile" onclick="openApp(\''+a.n+'\',\''+a.l+'\')"><span class="app-ic" style="background:'+a.c+'">'+a.g+'</span><span class="app-lb">'+a.l+'</span></button>';}).join('');}
+function toggleTheme(){var cur=document.documentElement.getAttribute('data-theme');var next=cur==='dark'?'light':'dark';document.documentElement.setAttribute('data-theme',next);try{localStorage.setItem('lb_theme',next);}catch(e){}var tg=document.getElementById('themeToggle');if(tg)tg.checked=(next==='dark');}
+
 function openApp(name,label){
   setDirect(false);                           // 确保「打开X」作为指令执行
   quickSend('打开'+name);
@@ -1300,6 +1320,8 @@ let _proc='';
 async function openMacSettings(){try{await lbFetch('/api/accessibility',{method:'POST'});}catch(e){}}
 initVoice();
 renderMode();
+renderApps();
+(function(){var tg=document.getElementById('themeToggle');if(tg)tg.checked=(document.documentElement.getAttribute('data-theme')==='dark');})();
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
 (function(){
