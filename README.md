@@ -102,9 +102,30 @@ node app.js
 | `/`（或 `/m`、`/index.html`） | **默认主入口**：干净重写的遥控页，普通文档流布局，兼容 iOS Safari |
 | `/public/phone.html` | **静态备用入口**：主入口的 HTML 快照，走静态路由实时读盘，不依赖服务重载；主入口异常时可用它顶上 |
 | `/old` | 旧版界面，仅用于对比 / 回退 |
+| `/setup` | **首次配置向导**（Mac 本机）：六步体检式配置，实时检测 + 一键操作 |
 | `/manage` | Mac 本机控制台：状态、二维码、开机自启、一键重载 |
 
 > `/public/phone.html` 是 `MINI_PAGE` 的静态快照。若后续修改了主页面，用 `node -e` 从 `app.js` 重新导出该文件即可同步（见仓库内注释）。
+
+**首次配置向导 `/setup`（第一次使用先走一遍）**
+
+在 Mac 本机浏览器打开 `http://localhost:8787/setup`（`/manage` 顶部也有入口）。向导不写死说明，每一步都实时调 `/api/setup/status` 读本机真实状态。
+
+| 步骤 | 做什么 | 解决什么问题 |
+|------|--------|--------------|
+| 1 环境体检 | 版本 / Node / 运行方式 / 权限 / 证书 SAN / 自启 / 应用数 / LLM / ASR | 先看清现状，避免瞎配 |
+| 2 开机自启 | 一键安装 launchd，并把当前手动实例交接给系统 | 关掉终端、重启 Mac 后服务还在 |
+| 3 辅助功能授权 | 打开系统设置 + 重新检测，显示真实授权对象 | 自动输入 / 窗口管理的前置条件 |
+| 4 固定连接与证书 | 复制 `.local` 链接 / 扫码 / 证书 SAN 自检 / 一键重签 | IP 会变，`.local` 不会变 |
+| 5 语音输入 | 三路径引导 + 可选 ASR 引擎配置与录音测试 | 默认零配置就能说话控制 |
+| 6 验收 | 无副作用解析演练 + 可选真机试跑「打开访达」+ 完成度 | 每一步都显示真实结果，不假装成功 |
+
+> 顺序是刻意设计的：**先切 launchd 再授权**。手动启动时辅助功能授权对象是终端 / 编辑器，切成系统托管后变成 node 可执行文件；反过来做要授权两次。
+
+- **交接保护**：只有 `launchctl list com.lobsterbrain` 确认任务确实加载成功，才让旧进程退出；新进程靠 `listenWithRetry` 在端口释放后 300ms 内接管。加载失败就不交接，宁可保持现状也不让服务断掉。
+- **证书自检**：解析证书 SAN 并与当前 IP 比对。例如当前 IP 是 `192.168.1.227`、证书里只有 `192.168.8.25 / 192.168.8.45`，向导会明确提示「当前 IP 不在证书里」并提供重签（保留历史 IP）。重签后需重载服务，且**手机要重新安装 `cert.crt` 并重新开启完全信任**；不想折腾就用 `.local` 文字入口 + 键盘听写。
+- 进度存在浏览器 localStorage，交接重启后自动回到原来那一步。
+- 所有写操作仅允许 `localhost` 发起，且只调用项目内固定脚本，不拼接任何用户传入的命令。
 
 主入口自带黑白主题开关、紫色语音球、8 个 App 图标、快捷指令、触控板与滚轮；**每一次操作都会在顶部状态条显示真实执行结果或具体错误**（发指令后轮询 `GET /api/task/:id`，不再出现「HTTP 200 就误报已执行」），连接状态每 8 秒自检一次。
 
@@ -150,6 +171,24 @@ node app.js
 | ③ 语音播报 | 执行结果由 `speechSynthesis` 读回，形成「说话 → Mac 执行 → 手机回读」闭环 | 语音区可一键开关 |
 
 > 为什么把键盘听写作为主力：iOS Safari 的网页语音识别支持**不一致**，且强制要求 HTTPS + 麦克风权限；键盘听写由系统提供，任何网络环境下都稳定可用。网页识别作为增强，不可用时会自动提示降级。
+
+**服务端 ASR：好做吗？（产品判断）**
+
+先澄清概念：**这个产品已经有 ASR**。iOS 键盘听写是 Apple 系统级语音识别，Web Speech API 是浏览器识别，两者都在把语音转成文字，之后走同一条指令链路。真正要讨论的是「要不要自己再接一个服务端转写引擎」。
+
+| 方案 | 怎么做 | 成本 | 主要代价 |
+|------|--------|------|----------|
+| A 不接（当前默认） | 键盘听写主力 + 网页识别降级，向导里把配置引导做扎实 | 0 | 做不了长语音 / 热词 / 唤醒词 |
+| B 本机 whisper.cpp | 手机录音 → `POST /api/asr` → ffmpeg 转 16k wav → whisper-cli 转写 | 半天 + 模型 500MB~1.5GB | 要装依赖、转写有 1-3 秒延迟、iOS 录音格式兼容要踩坑 |
+| C 云 ASR | 录音 POST 到 OpenAI 兼容 `/audio/transcriptions` 或腾讯云一句话识别 | 1-2 小时 + 按量付费 | 要密钥、要联网、**语音离开本机**，与「本地优先」定位冲突 |
+| D macOS 原生 Speech | Swift 命令行调 `SFSpeechRecognizer` | 半天 | 需编译 / 语音识别权限，手机录音仍要传回 Mac |
+
+**结论：技术上不难，但默认不划算。** 系统听写在中文准确率、延迟、隐私、成本上都是最优解；自建引擎只在「长语音 / 自定义热词 / 完全离线 / 唤醒词」这些明确需求下才值得。所以做成**可插拔插槽**，而不是替换主力路径：
+
+- `asr-config.json`（已 gitignore）：`provider` = `none` / `whisper` / `openai`，可配 `baseUrl` / `apiKey` / `model` / `whisperBin` / `whisperModel`；也可用环境变量 `LB_ASR_PROVIDER`、`LB_ASR_BASE_URL`、`LB_WHISPER_BIN` 等。
+- `GET /api/asr/status` 报告依赖（ffmpeg / whisper-cli / 模型 / Key）与隐私边界；`POST /api/asr` 接收录音转文字；`POST /api/asr/config` 在向导里保存配置。本机实测：ffmpeg 已装、whisper-cli 未装，因此本地引擎默认不可用。
+- 未启用引擎时调用会**明确报错**并引导回键盘听写，绝不静默假装识别成功。
+- 向导第 5 步可一键保存配置并「录音 3 秒测试转写」；云引擎会明确标注「音频会发往第三方」，本机 whisper 标注「不出网」。
 
 **主屏 App 化**：页面已带 `apple-mobile-web-app-capable` 等 meta 与 `public/icon.png`，在 Safari 里「添加到主屏幕」后全屏运行、有独立图标，像原生 App 一样一键唤起。
 
@@ -217,6 +256,7 @@ http://yangxuandeMacBook-Air.local:8787/?t=TOKEN    # 文字（HTTP）
 **运营看板**：`/dashboard` 含累计任务、成功率、平均耗时、近 7 日任务量、动作分布、任务明细，每 5 秒自动刷新。
 
 **常驻控制台 `/manage`（Mac 本机访问）**
+- 顶部有「首次配置向导」入口，第一次使用建议先走 `/setup` 把权限 / 自启 / 固定入口 / 证书一次配好。
 - 一个页面集中解决「用得上、打得开」：显示运行状态（版本 / PID / 运行时长 / 端口 / 令牌）、生成**扫码连接二维码**（手机相机一扫直达，已含令牌）、连接诊断（局域网 IP / 证书 / 辅助功能授权 / 开机自启是否启用）、一键重载与停止。
 - 二维码用的是固定的 `.local` 入口，IP 怎么变都能扫。二维码库 `public/qrcode.js` 是零依赖静态资源，运行时不需要 npm。
 
@@ -246,29 +286,33 @@ node app.js
 - **不部署到 Vercel / 无服务器平台**：控制能力依赖服务运行在你的 Mac 上，云平台拿不到你的电脑，部署上去只剩空壳网页。需远程访问请走「Mac 常驻 + 加密隧道 + 令牌」。
 - **辅助功能授权清晰可控**：自动输入 / 点击依赖系统辅助功能开关，用户显式授权且明确知道授权对象；未授权即降级为「复制 + 提示手动粘贴」，不绕过系统。
 - **高危操作边界**：删除文件等不可逆动作默认禁用；当前已支持的「发消息」属不可逆操作，也严格走「显式指令 + 操作日志」，产品化后以「操作白名单 + 二次确认」为底线。
-- **数据本地化**：任务数据存于本地 `tasks.json`，本 Demo 不上传任何数据；`auth.json` / `llm-config.json`（含 Key）均已 gitignore，不会进入公开仓库。
+- **数据本地化**：任务数据存于本地 `tasks.json`，本 Demo 不上传任何数据；`auth.json` / `llm-config.json` / `asr-config.json`（含 Key）均已 gitignore，不会进入公开仓库。
+- **配置向导的最小权限**：`/setup` 的写操作（装开机自启、重签证书、改 ASR 配置）仅 `localhost` 可调用，局域网一律 403；只执行项目内固定脚本，不拼接任何用户命令，也不接受外部传入的 shell。
 
 ## 八、目录结构与技术说明
 
 ```
 .
-├── app.js                 # 单文件服务（API + 手机页 + 看板 + 执行引擎 + 令牌鉴权）
+├── app.js                 # 单文件服务（API + 手机页 + 看板 + 配置向导 + 执行引擎 + 令牌鉴权）
 ├── bin/
 │   ├── mousectl.py        # 手机触控板/滚轮→Mac 鼠标的零依赖控制（python3 + CoreGraphics）
-│   └── gen-cert.sh        # 生成带 .local SAN 的自签名证书（IP 变了重跑）
+│   ├── gen-cert.sh        # 生成带 .local SAN 的自签名证书（IP 变了重跑）
+│   ├── install-launchd.sh # 安装开机自启（用户级 launchd，崩溃自动拉起）
+│   └── uninstall-launchd.sh
 ├── cert/                  # 自签名 SSL 证书 + lobsterbrain.crt（手机安装用，已 gitignore）
 ├── start.command          # 双击即用「终端」启动（确保辅助功能授权对象明确）
 ├── 龙虾脑产品方案.html      # 产品方案（用户价值/流程/边界/指标/规划/能力清单）
 ├── package.json
 ├── LICENSE
 ├── llm-config.json        # 大模型配置（含 Key，已 gitignore）
+├── asr-config.json        # 可选 ASR 引擎配置（含 Key，已 gitignore，默认 provider=none）
 ├── auth.json              # 局域网访问令牌（首次启动生成，已 gitignore）
 └── tasks.json             # 运行时自动生成，任务落库
 ```
 
 - **零依赖**：仅用 Node 内置 `http` / `fs` / `child_process` / `os`，无需 `npm install`。
 - **真实执行**：`open` 唤起应用 / 文件夹 / 网址，`osascript` 调系统事件与 AppleScript，`screencapture` 截图，`pbcopy` 剪贴板，`bin/mousectl.py` 控制光标。
-- **语音**：基于浏览器原生 Web Speech API，需 HTTPS 安全上下文。
+- **语音**：主力是 iOS 键盘听写（系统级 ASR，零配置）；HTTPS 下可用 Web Speech API 按住说话，`speechSynthesis` 播报结果；可选服务端 ASR 适配层（whisper.cpp / 云端）默认关闭。
 - **数据存储**：`tasks.json` 本地落库，重启不丢。
 
 ## License

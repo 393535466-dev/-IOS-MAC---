@@ -147,6 +147,10 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
     <tr><td><b>指令理解</b></td><td>直输模式</td><td>输入 / 语音原样填写到 Mac 当前应用输入框，跳过意图解析与口语规范化；默认仅对下一条生效（发完自动回指令模式），明确指令自动识别并逃逸，另有「指令：」「原文：」强制通道与逃生词，不自动发送</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>安全</b></td><td>HTTPS 证书与固定入口</td><td>自签证书含 .local 域名 + 新旧 IP 的 SAN、CA:TRUE / serverAuth；/cert.crt 供手机安装为受信任根证书，IP 变化不影响固定入口</td><td class="ok">✅ 已实现</td></tr>
     <tr><td><b>智能兜底</b></td><td>未安装应用自动回退</td><td>「打开抖音」本机没装 → 自动打开抖音网页版并说明「本机未安装」；无网页版时给出本机相似应用建议，不再冷冰冰报「执行失败」</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td rowspan="3"><b>首次配置</b></td><td>六步体检式向导</td><td><code>/setup</code>：环境体检 → 开机自启 → 辅助功能授权 → 固定连接与证书 → 语音输入 → 验收；每步实时检测、进度本地持久化。顺序刻意「先自启后授权」，避免授权对象从终端变成 node 后要重授权一次</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>证书 / IP 自检</td><td>解析证书 SAN 并比对当前局域网 IP；IP 变化后提示「当前 IP 不在证书里」，可一键重签（保留历史 IP）+ 重载，避免手机端 HTTPS 静默报证书不匹配</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td>一键交接 launchd</td><td>安装开机自启并确认 launchd 任务已加载后，才让当前手动实例退出，新进程在端口重试窗口内自动接管；加载失败则不交接，宁可不切也不让服务断掉</td><td class="ok">✅ 已实现</td></tr>
+    <tr><td><b>语音扩展</b></td><td>可插拔服务端 ASR</td><td><code>asr-config.json</code> 三档引擎：关闭（默认，用 iOS 键盘听写）/ 本机 whisper.cpp（离线）/ 云端 OpenAI 兼容 /audio/transcriptions；<code>POST /api/asr</code> 录音转文字后回到既有指令链路，未启用时明确报错而非假装识别</td><td class="ok">✅ 已实现（默认关闭）</td></tr>
   </table>
   <p style="margin-top:10px;font-size:13px;color:#888780">辅助功能：自动输入 / 鼠标点击依赖 macOS「辅助功能」授权，需在系统设置中授权运行 <code>node app.js</code> 的程序（终端 / VS Code / WorkBuddy 等）。</p>
 </section>
@@ -161,9 +165,12 @@ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:#F1EFE8;
       <li>手机触控板驱动 Mac 真实光标 + 一句话发微信</li>
       <li>语音输入（HTTPS 安全上下文）+ 四阶段状态透明回传</li>
       <li>局域网令牌鉴权 + 自定义密码，本机免验证</li>
+      <li>首次配置向导：权限 / 自启 / 固定入口 / 证书 / 语音一次配好，IP 变化可自检并一键重签</li>
+      <li>可插拔 ASR 适配层（默认关闭，键盘听写为主力）</li>
     </ul></div>
     <div class="mini"><h3 class="err">当前版本仍不做</h3><ul>
       <li>多意图 / 多步复杂任务编排（如「下载并压缩并邮件发送」）</li>
+      <li>常驻唤醒词 / 多轮指代（「把它发给刚才那个人」）——需独立 ASR 与会话状态，成本高于收益</li>
       <li>账号体系与多用户隔离 —— 当前为单设备形态</li>
       <li>删除文件、批量化破坏性等高危不可逆动作（需产品化后强制二次确认）</li>
       <li>公网部署 —— 控制能力依赖 Mac 本机，坚持本地运行不上 Vercel</li>

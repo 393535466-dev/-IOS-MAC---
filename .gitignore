@@ -27,6 +27,9 @@ cert/
 # LLM 配置（含 API Key，不提交）
 llm-config.json
 
+# ASR 引擎配置（可能含 API Key，不提交）
+asr-config.json
+
 # 访问令牌（含局域网口令，不提交）
 auth.json
 

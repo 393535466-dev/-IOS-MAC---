@@ -18,7 +18,7 @@
  * 智能：内置增强 NLU（动作/平台/内容类型/对象四维解析）+ 可选接真 LLM（LLM_BASE_URL/LLM_API_KEY/LLM_MODEL，OpenAI 兼容）
  * 输入：语音输入（实时反馈）、实时联想、多场景卡片、历史可重发、回车提交
  *
- * 页面：/ 手机任务页   /dashboard 运营看板
+ * 页面：/ 手机任务页   /dashboard 运营看板   /manage 控制台   /config 配置   /setup 首次配置向导
  * API：POST /api/task   GET /api/task/:id   GET /api/tasks
  */
 const http = require('http');
@@ -26,7 +26,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { execSync, execFileSync } = require('child_process');
 const crypto = require('crypto');
 // ---- 鼠标控制（手机触控板 → 远程控制 Mac 光标）----
@@ -46,7 +46,7 @@ function initMouse() {
 initMouse();
 
 const PORT = process.env.PORT || 8787;
-const VERSION = '3.3.0';
+const VERSION = '3.4.0';
 const DATA_FILE = path.join(__dirname, 'tasks.json');
 const HOT_MOVIES = ['哪吒之魔童闹海', '流浪地球', '唐探1900', '封神第二部', '沙丘2', '奥本海默', '碟中谍8', '雄狮少年2'];
 
@@ -2251,6 +2251,172 @@ load();
 loadToken();
 </script></body></html>`;
 
+/* ---------------- 首次配置向导 /setup ----------------
+ * 设计原则：向导只做「检测 + 固定脚本 + 文档引导」，不接受任何用户传入的 shell 命令；
+ * 所有写操作仅允许 Mac 本机（localhost）发起，局域网一律 403。
+ */
+const PLIST_PATH = path.join(os.homedir(), 'Library', 'LaunchAgents', 'com.lobsterbrain.plist');
+const ASR_CFG_FILE = path.join(__dirname, 'asr-config.json');
+const SETUP_SCRIPTS = {
+  install: path.join(__dirname, 'bin', 'install-launchd.sh'),
+  uninstall: path.join(__dirname, 'bin', 'uninstall-launchd.sh'),
+  cert: path.join(__dirname, 'bin', 'gen-cert.sh'),
+};
+
+function parentProcessName() {
+  try {
+    const out = execSync('ps -o comm= -p ' + process.ppid, { encoding: 'utf8', timeout: 2000 }).trim();
+    return out.includes('/') ? out.split('/').pop().replace(/\.app$/, '') : (out || '运行本服务的程序');
+  } catch (e) { return '运行本服务的程序'; }
+}
+function readAsrConfig() {
+  try { return JSON.parse(fs.readFileSync(ASR_CFG_FILE, 'utf8')) || {}; } catch (e) { return {}; }
+}
+function writeAsrConfig(cfg) { fs.writeFileSync(ASR_CFG_FILE, JSON.stringify(cfg, null, 2), 'utf8'); }
+function findBin(names) {
+  for (const n of names) {
+    if (!n) continue;
+    if (n.includes('/')) { try { if (fs.existsSync(n)) return n; } catch (e) {} }
+    else {
+      try {
+        const p = execFileSync('/bin/bash', ['-lc', 'command -v ' + n], { encoding: 'utf8', timeout: 2500, maxBuffer: 1e5 }).trim();
+        if (p) return p;
+      } catch (e) {}
+    }
+  }
+  return '';
+}
+
+/* ASR：可插拔适配层。默认 provider=none —— 用 iOS 键盘听写（系统级 ASR），
+ * 不引入任何依赖、不联网、不上传音频。需要自建/云引擎时才在向导里启用。 */
+function asrStatus() {
+  const cfg = readAsrConfig();
+  const provider = cfg.provider || process.env.LB_ASR_PROVIDER || 'none';
+  const ffmpegPath = findBin(['ffmpeg', '/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']);
+  const whisperCliPath = findBin([cfg.whisperBin, process.env.LB_WHISPER_BIN, 'whisper-cli', 'whisper-cpp', '/opt/homebrew/bin/whisper-cli']);
+  const modelPath = cfg.whisperModel || process.env.LB_WHISPER_MODEL || '';
+  const hasModel = !!modelPath && fs.existsSync(modelPath);
+  const baseUrl = cfg.baseUrl || process.env.LB_ASR_BASE_URL || process.env.LLM_BASE_URL || '';
+  const apiKey = cfg.apiKey || process.env.LB_ASR_API_KEY || process.env.LLM_API_KEY || '';
+  const cloudModel = cfg.model || process.env.LB_ASR_MODEL || 'whisper-1';
+  const reasons = [];
+  let ready = false;
+  if (provider === 'none') reasons.push('未启用服务端 ASR（默认：iOS 键盘听写就是系统级 ASR，零配置、最稳）');
+  else if (provider === 'whisper') {
+    if (!ffmpegPath) reasons.push('缺少 ffmpeg（音频转 16k wav）');
+    if (!whisperCliPath) reasons.push('缺少 whisper-cli（whisper.cpp 命令行）');
+    if (!hasModel) reasons.push('未配置模型文件 whisperModel');
+    ready = !!(ffmpegPath && whisperCliPath && hasModel);
+  } else if (provider === 'openai') {
+    if (!baseUrl) reasons.push('缺少 ASR Base URL');
+    if (!apiKey) reasons.push('缺少 API Key');
+    ready = !!(baseUrl && apiKey);
+  } else reasons.push('未知引擎：' + provider);
+  return {
+    provider, ready, reasons,
+    deps: { ffmpeg: !!ffmpegPath, whisperCli: !!whisperCliPath, model: hasModel, apiKey: !!apiKey },
+    paths: { ffmpegPath, whisperCliPath, modelPath: modelPath || '', baseUrl: baseUrl || '', cloudModel },
+    privacy: provider === 'openai' ? '音频会离开本机发往第三方服务' : (provider === 'whisper' ? '音频仅在本机转写，不出网' : '不采集、不上传任何音频'),
+  };
+}
+
+/* 把手机录下的音频转成文字；provider=none 时明确报错（绝不静默假装识别成功） */
+async function transcribeAudio(buf, mime) {
+  const st = asrStatus();
+  if (st.provider === 'none') throw new Error('服务端 ASR 未启用。推荐直接用 iOS 键盘听写；若要自建引擎，请在向导「语音输入」里选好引擎。');
+  if (!st.ready) throw new Error('ASR 引擎未就绪：' + st.reasons.join('；'));
+  const cfg = readAsrConfig();
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lb-asr-'));
+  const ext = /m4a|mp4/.test(mime) ? '.m4a' : (/wav|wave/.test(mime) ? '.wav' : '.webm');
+  const inFile = path.join(tmp, 'audio' + ext);
+  try {
+    fs.writeFileSync(inFile, buf);
+    if (st.provider === 'openai') {
+      const fd = new FormData();
+      fd.append('file', new Blob([buf], { type: mime || 'audio/webm' }), 'audio' + ext);
+      fd.append('model', st.paths.cloudModel);
+      fd.append('language', 'zh');
+      const key = cfg.apiKey || process.env.LB_ASR_API_KEY || process.env.LLM_API_KEY || '';
+      const r = await fetch(st.paths.baseUrl.replace(/\/$/, '') + '/audio/transcriptions', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: fd,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error((j.error && j.error.message) || ('ASR 服务返回 HTTP ' + r.status));
+      return String(j.text || '').trim();
+    }
+    // 本地 whisper.cpp：ffmpeg 统一转 16k 单声道 wav，再交给 whisper-cli
+    const wav = path.join(tmp, 'audio.wav');
+    execFileSync(st.paths.ffmpegPath, ['-y', '-loglevel', 'error', '-i', inFile, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { timeout: 30000, maxBuffer: 1e6 });
+    const outPrefix = path.join(tmp, 'out');
+    execFileSync(st.paths.whisperCliPath, ['-m', st.paths.modelPath, '-l', 'zh', '-f', wav, '-otxt', '-of', outPrefix, '-nt'], { timeout: 90000, maxBuffer: 1e6 });
+    return fs.readFileSync(outPrefix + '.txt', 'utf8').trim();
+  } finally {
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+  }
+}
+
+function certSan() {
+  const pem = path.join(__dirname, 'cert', 'cert.pem');
+  if (!fs.existsSync(pem)) return { exists: false, ips: [], dns: [], line: '' };
+  try {
+    const out = execFileSync('openssl', ['x509', '-in', pem, '-noout', '-text'], { encoding: 'utf8', timeout: 3000, maxBuffer: 1e6 });
+    const line = (out.split('\n').find(l => /DNS:|IP Address/.test(l)) || '').trim();
+    return {
+      exists: true, line,
+      ips: Array.from(line.matchAll(/IP Address:?\s*([\d.]+)/g)).map(m => m[1]),
+      dns: Array.from(line.matchAll(/DNS:([^,\s]+)/g)).map(m => m[1]),
+    };
+  } catch (e) { return { exists: true, ips: [], dns: [], line: '', error: e.message }; }
+}
+
+async function setupStatus() {
+  const ifaces = os.networkInterfaces();
+  const ips = [];
+  for (const k in ifaces) for (const i of ifaces[k]) if (i.family === 'IPv4' && !i.internal) ips.push(i.address);
+  const ip = lanIP();
+  const localName = os.hostname().split('.')[0] + '.local';
+  const cert = certSan();
+  const cfg = llmConfig();
+  let granted = false;
+  try { granted = await checkAccessibility(); } catch (e) {}
+  return {
+    version: VERSION, node: process.version, arch: process.arch, os: 'macOS ' + os.release(),
+    pid: process.pid, uptime: Math.round(process.uptime()),
+    launchedByLaunchd: !!process.env.LB_LAUNCHED,
+    httpPort: Number(PORT), httpsPort: Number(PORT) + 1,
+    lanIP: ip, ips, localName,
+    parentProcess: parentProcessName(),
+    nodePath: process.execPath,
+    accessibility: granted,
+    launchd: fs.existsSync(PLIST_PATH),
+    cert: { exists: cert.exists, ips: cert.ips, dns: cert.dns, line: cert.line, coversCurrentIp: cert.ips.includes(ip), coversLocalName: cert.dns.includes(localName) },
+    llm: { enabled: cfg.enabled, model: cfg.model },
+    apps: INSTALLED_APPS.length,
+    trustLan: TRUST_LAN, tokenMasked: AUTH_TOKEN.slice(0, 4) + '••••' + AUTH_TOKEN.slice(-4),
+    asr: asrStatus(),
+    links: {
+      http: 'http://' + ip + ':' + PORT + '/?t=' + AUTH_TOKEN,
+      https: 'https://' + ip + ':' + (Number(PORT) + 1) + '/?t=' + AUTH_TOKEN,
+      local: 'http://' + localName + ':' + PORT + '/?t=' + AUTH_TOKEN,
+      localHttps: 'https://' + localName + ':' + (Number(PORT) + 1) + '/?t=' + AUTH_TOKEN,
+      cert: 'http://' + ip + ':' + PORT + '/cert.crt',
+      manage: 'http://localhost:' + PORT + '/manage',
+    },
+  };
+}
+
+function runSetupScript(kind, args) {
+  return new Promise(resolve => {
+    execFile('/bin/bash', [SETUP_SCRIPTS[kind]].concat(args || []),
+      { cwd: __dirname, timeout: 25000, maxBuffer: 1e6 },
+      (err, stdout, stderr) => resolve({
+        ok: !err,
+        output: ((stdout || '') + (stderr || '')).trim().slice(0, 2000),
+        error: err ? err.message : '',
+      }));
+  });
+}
+
 /* ---------------- 常驻控制台 /manage ---------------- */
 const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>龙虾脑 · 控制台</title>
@@ -2285,6 +2451,13 @@ const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
 <body><div class="wrap">
 <h1>龙虾脑 · 控制台</h1>
 <div class="sub">常驻管理页：开机自启 / 扫码连接 / 连接诊断 / 一键重载。仅限 Mac 本机访问。</div>
+
+<div class="card" style="border-color:var(--ember);background:#FFF7F4">
+  <h2 style="color:var(--ember)">第一次用？先走配置向导</h2>
+  <div class="hint" style="margin-bottom:10px">3 分钟把开机自启、辅助功能授权、固定 .local 入口、HTTPS 证书与语音一次配好；以后 IP 变了也不用重来。</div>
+  <button class="primary" onclick="location.href='/setup'">打开首次配置向导 →</button>
+  <a href="/setup" style="margin-left:12px;font-size:12px">查看 /setup</a>
+</div>
 
 <div class="card"><h2>运行状态</h2><div id="status">加载中…</div></div>
 
@@ -2371,6 +2544,403 @@ load();
 (async function(){try{var a=await (await fetch('/api/accessibility')).json();var el=document.getElementById('dAcc');if(el)el.innerHTML=a.granted?pill(true,'已授权'):pill(false,'未授权');}catch(e){}})();
 </script>
 </body></html>`;
+
+/* ---------------- 首次配置向导页面 ---------------- */
+const SETUP_PAGE = `<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>龙虾脑 · 首次配置向导</title>
+<style>
+:root{--bg:#FAFAF8;--card:#FFF;--fg:#1A1A1A;--muted:#6B6B6B;--line:#E3E1DB;--ember:#E8451F;--ok:#1E9E6A;--warn:#B8761A;--err:#A32D2D;--soft:#F6F4F0}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;line-height:1.65;-webkit-font-smoothing:antialiased}
+.shell{max-width:1080px;margin:0 auto;padding:28px 24px 90px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:24px;flex-wrap:wrap;margin-bottom:24px}
+.brand{display:flex;gap:14px;align-items:center}
+.mark{width:46px;height:46px;border-radius:13px;background:var(--ember);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px;letter-spacing:-.5px;flex:none}
+.brand h1{font-size:21px;margin:0;letter-spacing:-.3px}
+.brand p{margin:1px 0 0;font-size:13px;color:var(--muted)}
+.progress{display:flex;align-items:center;gap:12px;min-width:220px;flex:1;max-width:320px}
+.pbar{flex:1;height:6px;background:#EAE7E0;border-radius:6px;overflow:hidden}
+.pbar i{display:block;height:100%;width:0;background:var(--ember);transition:width .3s ease}
+#ptext{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:230px minmax(0,1fr);gap:24px;align-items:start}
+.nav{position:sticky;top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:8px}
+.nitem{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:10px;cursor:pointer;font-size:13px;transition:background .15s}
+.nitem:hover{background:var(--soft)}
+.nitem.on{background:#FDEEE9}
+.nitem.on b{color:var(--ember)}
+.num{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);display:grid;place-items:center;font-size:11px;flex:none;background:#fff;color:var(--muted)}
+.nitem.on .num{background:var(--ember);border-color:var(--ember);color:#fff}
+.nitem.done .num{background:var(--ok);border-color:var(--ok);color:#fff}
+.nitem small{display:block;color:var(--muted);font-size:11px;font-weight:400;line-height:1.45;margin-top:1px}
+.main{min-width:0}
+.banner{display:none;padding:11px 14px;border-radius:10px;font-size:13px;margin-bottom:14px;border:1px solid var(--line);background:#fff;word-break:break-word}
+.banner.ok{background:#E7F5EE;border-color:#BFE6D3;color:#146B48}
+.banner.warn{background:#FFF6E6;border-color:#F0DDB4;color:#8A5A12}
+.banner.err{background:#FCEBEB;border-color:#F0C7C7;color:var(--err)}
+.banner.info{background:#EEF3FA;border-color:#CFDCEC;color:#33517A}
+.panel{display:none;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px 28px}
+.panel.on{display:block}
+.panel h2{font-size:19px;margin:0 0 5px;letter-spacing:-.2px}
+.lead{font-size:13px;color:var(--muted);margin:0 0 20px}
+h3{font-size:14px;margin:22px 0 10px;font-weight:600}
+h3:first-of-type{margin-top:0}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.kv:last-child{border-bottom:none}
+.kv>span:first-child{color:var(--muted);flex:none}
+.kv>span:last-child{text-align:right;word-break:break-all}
+.pill{display:inline-block;padding:1px 9px;border-radius:10px;font-size:11px;font-weight:600;white-space:nowrap}
+.pill.ok{background:#E7F5EE;color:var(--ok)}
+.pill.warn{background:#FFF1D9;color:var(--warn)}
+.pill.err{background:#FCEBEB;color:var(--err)}
+.pill.idle{background:#F0EEE9;color:var(--muted)}
+.box{border:1px solid var(--line);border-left:3px solid var(--line);border-radius:9px;padding:12px 14px;font-size:13px;margin:14px 0;background:var(--soft);color:#444}
+.box.info{border-left-color:#5A7DB0;background:#F3F6FC}
+.box.ok{border-left-color:var(--ok);background:#F1F9F5}
+.box.warn{border-left-color:var(--warn);background:#FFF8EA;color:#6E4B12}
+.box b{color:var(--fg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:13px;padding:9px 15px;border-radius:9px;border:1px solid var(--line);background:#fff;color:var(--fg);cursor:pointer;text-decoration:none;white-space:nowrap}
+.btn:hover{border-color:#B9B5AC}
+.btn:active{opacity:.75}
+.btn.primary{background:var(--ember);border-color:var(--ember);color:#fff;font-weight:600}
+.btn.ghost{background:transparent}
+.btn.small{padding:6px 10px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:12px 0}
+ol,ul{margin:8px 0;padding-left:20px;font-size:13px;color:#444}
+li{margin:5px 0}
+.linkbox{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.linkbox .t{font-size:12px;color:var(--muted);margin-bottom:6px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+.linkbox code{display:block;font-size:12px;word-break:break-all;background:var(--soft);padding:8px 10px;border-radius:6px;margin-bottom:8px;color:#333}
+.tag{font-size:11px;padding:1px 7px;border-radius:5px;background:#FDEEE9;color:var(--ember);font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mini{border:1px solid var(--line);border-radius:10px;padding:14px;background:#fff}
+.mini h4{font-size:13px;margin:0 0 6px}
+.mini p{font-size:12px;color:var(--muted);margin:0 0 8px;line-height:1.6}
+.field{margin:10px 0}
+.field label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.field input,.field select{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:13px;font-family:inherit;background:#fff;color:var(--fg);outline:none}
+.field input:focus,.field select:focus{border-color:var(--ember)}
+#qr{display:flex;justify-content:center;margin:14px 0 4px}
+#qr svg{max-width:190px;height:auto}
+.foot{display:flex;gap:9px;align-items:center;margin-top:18px;padding-top:18px;border-top:1px solid var(--line)}
+.foot .spacer{flex:1}
+.tail{font-size:12px;color:var(--muted);text-align:center;margin-top:18px;line-height:1.7}
+code.inline{background:var(--soft);padding:1px 5px;border-radius:4px;font-size:12px}
+.chk{display:flex;gap:9px;align-items:flex-start;font-size:13px;padding:7px 0}
+.chk .dot{width:18px;height:18px;border-radius:50%;flex:none;display:grid;place-items:center;font-size:11px;color:#fff;margin-top:2px}
+@media(max-width:780px){.shell{padding:18px 14px 60px}.grid{grid-template-columns:1fr;gap:14px}.nav{position:static;display:flex;overflow-x:auto;padding:6px}.nitem{min-width:132px}.nitem small{display:none}.panel{padding:20px 16px}.grid2{grid-template-columns:1fr}.progress{max-width:none}}
+</style></head><body>
+<div class="shell">
+  <header class="top">
+    <div class="brand"><div class="mark">LB</div><div><h1>首次配置向导</h1><p>约 3 分钟 · 一次配好，IP 再变也不用重来</p></div></div>
+    <div class="progress"><div class="pbar"><i id="pbar"></i></div><span id="ptext">0 / 6</span></div>
+  </header>
+  <div class="grid">
+    <aside class="nav" id="nav"></aside>
+    <main class="main">
+      <div class="banner" id="banner"></div>
+
+      <section class="panel on" id="s0">
+        <h2>1 · 环境体检</h2><p class="lead">先看清这台 Mac 的真实状态，再决定要配什么。下面的每一项都是实时检测，不是写死的说明。</p>
+        <div id="checks"></div>
+        <div class="box info"><b>必做 3 项</b>：开机自启 → 辅助功能授权 → 固定连接。<br>其余（大模型、服务端 ASR）都是可选增强，不配也能正常使用。</div>
+        <div class="box warn" id="envIpBox"></div>
+        <div class="row"><button class="btn" onclick="refresh()">重新检测</button><a class="btn ghost" href="/manage" >打开控制台</a></div>
+      </section>
+
+      <section class="panel" id="s1">
+        <h2>2 · 开机自启</h2><p class="lead">让服务由 macOS 托管：登录后自动启动、崩溃后自动拉起。<b>先做这一步</b>，下一步的辅助功能授权对象才不会变。</p>
+        <div id="autoBox"></div>
+        <h3>这一步会做什么</h3>
+        <ol><li>写入 <code class="inline">~/Library/LaunchAgents/com.lobsterbrain.plist</code>（用户级，不需要 sudo）</li><li>由 <code class="inline">launchd</code> 拉起服务，并把当前手动实例交接出去</li><li>页面会在约 3 秒后自动刷新，向导进度会保留</li></ol>
+        <div class="box warn"><b>切换会短暂重启服务</b>。若 5 秒后页面没有自动恢复，请双击项目里的 <code class="inline">start.command</code> 手动启动，再回来刷新本页。</div>
+      </section>
+
+      <section class="panel" id="s2">
+        <h2>3 · 辅助功能授权</h2><p class="lead">「往应用里自动打字」「窗口管理」「复制粘贴」依赖 macOS 辅助功能权限。不授权也能打开应用、搜索、控制鼠标。</p>
+        <div id="permBox"></div>
+        <h3>授权步骤</h3>
+        <ol id="permSteps"></ol>
+        <div class="row"><button class="btn primary" onclick="openPerm()">打开系统设置</button><button class="btn" onclick="refresh()">重新检测</button></div>
+      </section>
+
+      <section class="panel" id="s3">
+        <h2>4 · 固定连接与证书</h2><p class="lead">IP 会变，<code class="inline">.local</code> 域名不会。把固定入口加到手机主屏，之后无论路由器怎么分配 IP 都不用换链接。</p>
+        <div id="certBox"></div>
+        <h3>手机入口（含访问令牌，别发到公开场合）</h3>
+        <div id="linkBox"></div>
+        <div id="qr"></div>
+        <h3>让 iPhone 信任证书（仅 HTTPS 语音需要，做一次）</h3>
+        <ol><li>手机 Safari 打开 <span id="certUrl"></span>，下载描述文件</li><li>「设置 → 通用 → VPN 与设备管理」安装 <b>LobsterBrain</b></li><li>「设置 → 通用 → 关于本机 → 证书信任设置」开启<b>完全信任</b></li><li>重签过证书的话，必须重新做一遍这三步</li></ol>
+        <h3>添加到主屏幕</h3>
+        <ol><li>手机 Safari 打开上面的「文字入口（推荐）」</li><li>点底部「分享 → 添加到主屏幕」</li><li>之后点桌面图标即可全屏打开，像原生 App</li></ol>
+      </section>
+
+      <section class="panel" id="s4">
+        <h2>5 · 语音输入</h2><p class="lead">手机遥控电脑的语音链路。<b>默认不需要任何服务端 ASR</b> —— iOS 键盘听写本身就是系统级中文识别。</p>
+        <div class="grid2">
+          <div class="mini"><h4>① 键盘听写 <span class="tag">推荐主力</span></h4><p>点手机页紫色圆球 → 唤起输入框 → 点 iOS 键盘上的麦克风 → 说话 → 点发送。零证书、零权限、任何网络都可用。</p><span class="pill ok">零配置</span></div>
+          <div class="mini"><h4>② 按住说话（网页识别）</h4><p>用 <code class="inline">.local:8788</code> 的 HTTPS 入口，按住紫色圆球说话、松开自动执行。需先信任证书，iOS Safari 支持度不一致。</p><span class="pill warn">需 HTTPS</span></div>
+          <div class="mini"><h4>③ 结果语音播报</h4><p>执行完成后手机把结果读回来，形成「说话 → Mac 执行 → 手机回读」闭环，语音区可一键开关。</p><span class="pill idle">可选</span></div>
+          <div class="mini"><h4>④ 服务端 ASR（实验）</h4><p>自己接转写引擎，把手机录音上传给 Mac 或云 API。准确可控，但要装依赖 / 配密钥，音频可能出网。</p><span class="pill idle">默认关闭</span></div>
+        </div>
+        <h3>服务端 ASR 引擎状态</h3>
+        <div id="asrBox"></div>
+        <div id="asrForm"></div>
+        <div class="box info" id="asrNote"></div>
+        <div class="row"><button class="btn" id="asrTestBtn" onclick="testAsr()">录音 3 秒测试转写</button><span id="asrResult" style="font-size:13px"></span></div>
+      </section>
+
+      <section class="panel" id="s5">
+        <h2>6 · 验收与完成</h2><p class="lead">先做无副作用的解析演练，再决定是否真实跑一条指令。所有结果都来自服务真实返回，不假装成功。</p>
+        <h3>① 解析演练（不操控 Mac）</h3>
+        <div id="parseOut" style="font-size:13px;color:var(--muted)">正在检测…</div>
+        <h3>② 真机试跑（可选）</h3>
+        <p class="lead" style="margin-bottom:10px">会真的在 Mac 上「打开访达」，无破坏性；不想让电脑动一下可以跳过。</p>
+        <div class="row"><button class="btn" id="runBtn" onclick="realRun()">试跑「打开访达」</button><span id="runOut" style="font-size:13px"></span></div>
+        <h3>配置完成度</h3>
+        <div id="finalList"></div>
+        <div class="box ok" id="finalBox"></div>
+        <div class="row"><a class="btn primary" id="openPhone" href="#" target="_blank">打开手机遥控页</a><a class="btn" href="/manage">回到控制台</a><button class="btn ghost" onclick="resetWizard()">重新开始向导</button></div>
+      </section>
+
+      <div class="foot">
+        <button class="btn" id="prev">← 上一步</button><div class="spacer"></div>
+        <button class="btn ghost" id="skip">跳过这步</button>
+        <button class="btn primary" id="next">下一步 →</button>
+      </div>
+      <div class="tail">本向导仅允许 Mac 本机操作，所有写操作只调用项目内固定脚本，不接受任意命令。<br>龙虾脑 <span id="ver"></span> · 数据全部留在这台 Mac</div>
+    </main>
+  </div>
+</div>
+<script src="/public/qrcode.js"></script>
+<script>
+var S=null, step=0, DONE={};
+var STEPS=[
+ {t:'环境体检',s:'看清这台 Mac 的状态'},
+ {t:'开机自启',s:'交给 launchd 托管'},
+ {t:'辅助功能授权',s:'让自动输入生效'},
+ {t:'固定连接与证书',s:'IP 变了也能打开'},
+ {t:'语音输入',s:'键盘听写 / ASR'},
+ {t:'验收与完成',s:'解析演练 + 真机试跑'}
+];
+function el(id){return document.getElementById(id);}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function pill(k,t){return '<span class="pill '+k+'">'+esc(t)+'</span>';}
+function box(k,html){return '<div class="box '+k+'">'+html+'</div>';}
+function kv(k,v,p){return '<div class="kv"><span>'+k+'</span><span>'+v+' '+p+'</span></div>';}
+function showBanner(k,m){var b=el('banner');b.className='banner '+k;b.innerHTML=esc(m);b.style.display='block';}
+function hideBanner(){el('banner').style.display='none';}
+async function api(p,o){var r=await fetch(p,o||{});var d=await r.json().catch(function(){return {};});if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d;}
+function saveState(){try{localStorage.setItem('lb_setup_v1',JSON.stringify({step:step,done:DONE}));}catch(e){}}
+function loadState(){try{var j=JSON.parse(localStorage.getItem('lb_setup_v1')||'{}');DONE=j.done||{};step=Math.max(0,Math.min(5,Number(j.step)||0));}catch(e){}}
+function go(i){step=Math.max(0,Math.min(5,i));saveState();render();window.scrollTo({top:0,behavior:'smooth'});if(step===5)selftest();}
+function renderNav(){
+  el('nav').innerHTML=STEPS.map(function(s,i){
+    var c='nitem'+(i===step?' on':'')+(DONE[i]?' done':'');
+    var n=DONE[i]&&i!==step?'✓':(i+1);
+    return '<div class="'+c+'" onclick="go('+i+')"><span class="num">'+n+'</span><span><b>'+esc(s.t)+'</b><small>'+esc(s.s)+'</small></span></div>';
+  }).join('');
+  var n=Object.keys(DONE).filter(function(k){return DONE[k];}).length;
+  el('pbar').style.width=Math.round(n/6*100)+'%';
+  el('ptext').textContent=n+' / 6 已完成';
+  for(var i=0;i<6;i++) el('s'+i).className='panel'+(i===step?' on':'');
+  el('prev').disabled=(step===0);
+  el('next').textContent=(step===5?'完成配置':'下一步 →');
+  el('ver').textContent=S?('v'+S.version):'';
+}
+function renderChecks(){
+  if(!S)return;
+  var c=S.cert;
+  var certOk=c.exists&&c.coversCurrentIp;
+  el('checks').innerHTML=[
+    kv('服务', 'v'+esc(S.version)+' · PID '+S.pid, pill('ok','运行中')),
+    kv('运行环境', esc(S.node)+' · '+esc(S.os), pill('ok','就绪')),
+    kv('运行方式', S.launchedByLaunchd?'launchd 系统托管':'手动启动', pill(S.launchedByLaunchd?'ok':'warn',S.launchedByLaunchd?'稳定':'待切换')),
+    kv('辅助功能授权', S.accessibility?'已授权':'未授权', pill(S.accessibility?'ok':'warn',S.accessibility?'可用':'待办')),
+    kv('HTTPS 证书', certOk?'已生成 · 覆盖当前 IP':(c.exists?'已生成 · 当前 IP 不在 SAN 里':'未生成'), pill(certOk?'ok':'warn',certOk?'可用':'待处理')),
+    kv('开机自启', S.launchd?'已安装':'未安装', pill(S.launchd?'ok':'warn',S.launchd?'已配置':'待办')),
+    kv('本机应用识别', S.apps+' 个', pill('ok','已扫描')),
+    kv('智能解析', S.llm.enabled?'大模型 '+esc(S.llm.model):'本地规则引擎', pill(S.llm.enabled?'ok':'idle',S.llm.enabled?'增强':'够用')),
+    kv('服务端 ASR', S.asr.provider==='none'?'未启用（系统听写）':esc(S.asr.provider), pill(S.asr.ready?'ok':'idle',S.asr.ready?'就绪':'可选'))
+  ].join('');
+  el('envIpBox').innerHTML='<b>注意 IP 会变。</b>当前局域网 IP 是 <b>'+esc(S.lanIP)+'</b>，固定域名是 <b>'+esc(S.localName)+'</b>。手机主屏请一定用第 4 步的 .local 链接，别存带 IP 的书签。';
+}
+function renderAuto(){
+  if(!S)return;
+  var h='';
+  if(S.launchd&&S.launchedByLaunchd){
+    h=box('ok','<b>已由 launchd 托管。</b>登录自动启动、崩溃自动拉起，这一步不用再做。')+'<div class="row"><a class="btn" href="/manage">去控制台管理开机自启</a></div>';
+  }else if(S.launchd){
+    h=box('warn','<b>开机自启已安装，但当前仍是手动启动的实例。</b>需要把进程交接给系统，配置才算真正生效。')+'<div class="row"><button class="btn primary" onclick="autostart(\\'handover\\')">切换为系统托管</button></div>';
+  }else{
+    h=box('warn','<b>尚未启用开机自启。</b>现在服务是手动跑起来的，关掉终端 / 重启 Mac 后手机就打不开了。')+'<div class="row"><button class="btn primary" id="autoBtn" onclick="autostart(\\'install\\')">一键安装并切换为系统托管</button></div>';
+  }
+  el('autoBox').innerHTML=h;
+}
+function renderPerm(){
+  if(!S)return;
+  var who=S.launchedByLaunchd?('<b>node 可执行文件</b>（'+esc(S.nodePath||'which node')+'）'):('<b>'+esc(S.parentProcess)+'</b>（当前运行本服务的程序）');
+  var h=(S.accessibility?box('ok','<b>已授权。</b>自动输入、窗口管理、复制粘贴都可以用。'):box('warn','<b>未授权。</b>现在能打开应用 / 搜索 / 控制鼠标，但「往应用里打字」不会生效。'))
+    +kv('当前授权对象',who,pill(S.accessibility?'ok':'warn',S.accessibility?'已授权':'待授权'));
+  el('permBox').innerHTML=h;
+  el('permSteps').innerHTML='<li>点「打开系统设置」，进入 <b>系统设置 → 隐私与安全性 → 辅助功能</b></li>'
+    +'<li>在列表里找到并开启 '+who+'</li>'
+    +'<li><b>完全退出该程序再重新打开</b>（或在控制台点「一键重载」），权限才生效</li>'
+    +'<li>回到这里点「重新检测」，显示已授权即可</li>';
+}
+function linkCard(title,tag,url,note){
+  return '<div class="linkbox"><div class="t"><span>'+esc(title)+'</span><span class="tag">'+esc(tag)+'</span></div><code>'+esc(url)+'</code>'
+    +'<div class="row" style="margin:0"><button class="btn small" onclick="copyUrl(this)">复制链接</button><span style="font-size:11px;color:var(--muted)">'+esc(note)+'</span></div></div>';
+}
+function renderLinks(){
+  if(!S)return;
+  var L=S.links,c=S.cert;
+  el('linkBox').innerHTML=
+    linkCard('文字入口（推荐加到主屏）','固定 .local',L.local,'IP 变了也不失效')+
+    linkCard('语音入口（按住说话）','HTTPS',L.localHttps,'需先在手机上信任证书')+
+    linkCard('备用：当前 IP 直连','IP',L.http,'临时排障用，IP 会变');
+  el('certUrl').innerHTML='<code class="inline">'+esc(L.cert)+'</code>';
+  var h='';
+  if(!c.exists) h=box('warn','<b>还没有 HTTPS 证书。</b>文字入口可用，但按住说话不可用。')+'<div class="row"><button class="btn" onclick="regenCert()">生成证书</button></div>';
+  else if(!c.coversCurrentIp) h=box('warn','<b>当前 IP '+esc(S.lanIP)+' 不在证书里。</b>证书 SAN 只有：'+esc(c.line||'（读取失败）')+'。用 IP 打开 HTTPS 会报证书不匹配；用 .local 域名不受影响，但若想用 IP 的 HTTPS 入口，建议重签。')+'<div class="row"><button class="btn" onclick="regenCert()">重签证书（保留旧 IP）</button></div>';
+  else h=box('ok','<b>证书已覆盖当前 IP 与 .local 域名。</b>SAN：'+esc(c.line));
+  h+='<div class="row"><a class="btn small" href="/cert.crt" download>下载根证书（本机）</a><a class="btn small ghost" href="/api/reload" onclick="doReload(event)">重载服务</a></div>';
+  h+='<div class="box info">重签证书会生成新的自签证书，<b>手机需要重新下载并安装 cert.crt、重开完全信任</b>；重签后还要重载服务才生效。若不想折腾，直接用 .local 文字入口 + 键盘听写即可。</div>';
+  el('certBox').innerHTML=h;
+  try{var q=qrcode(0,'M');q.addData(L.local);q.make();el('qr').innerHTML=q.createSvgTag({cellSize:5,margin:8,alt:'手机连接二维码'});}
+  catch(e){el('qr').innerHTML='<span style="font-size:12px;color:var(--muted)">二维码生成失败，请直接复制链接</span>';}
+}
+function renderVoice(){
+  if(!S)return;
+  var a=S.asr,d=a.deps;
+  el('asrBox').innerHTML=
+    kv('当前引擎',a.provider==='none'?'关闭（推荐）':esc(a.provider),pill(a.ready?'ok':'idle',a.ready?'就绪':'未启用'))
+    +kv('依赖检测','ffmpeg '+(d.ffmpeg?'✓':'—')+' · whisper-cli '+(d.whisperCli?'✓':'—')+' · 模型 '+(d.model?'✓':'—')+' · Key '+(d.apiKey?'✓':'—'),pill('idle','本机'))
+    +kv('隐私边界',esc(a.privacy),pill(a.provider==='openai'?'warn':'ok',a.provider==='openai'?'出网':'本地'))
+    +(a.reasons.length?box('info',a.reasons.map(function(r){return '· '+esc(r);}).join('<br>')):'');
+  var sel=a.provider;
+  el('asrForm').innerHTML='<div class="grid2">'
+    +'<div class="field"><label>引擎（保存后立即生效）</label><select id="asrProvider">'
+      +'<option value="none"'+(sel==='none'?' selected':'')+'>关闭 · 用 iOS 键盘听写</option>'
+      +'<option value="whisper"'+(sel==='whisper'?' selected':'')+'>本机 whisper.cpp（离线）</option>'
+      +'<option value="openai"'+(sel==='openai'?' selected':'')+'>云端 OpenAI 兼容 /audio/transcriptions</option>'
+    +'</select></div>'
+    +'<div class="field"><label>云端模型名</label><input id="asrModel" value="'+esc(a.paths.cloudModel)+'" placeholder="whisper-1"></div>'
+    +'<div class="field"><label>ASR Base URL（云端）</label><input id="asrBase" value="'+esc(a.paths.baseUrl)+'" placeholder="https://api.openai.com/v1"></div>'
+    +'<div class="field"><label>API Key（云端，留空保留原值）</label><input id="asrKey" type="password" placeholder="sk-..."></div>'
+    +'<div class="field"><label>whisper-cli 路径（本机，留空自动找）</label><input id="asrBin" value="'+esc(a.paths.whisperCliPath)+'" placeholder="自动检测"></div>'
+    +'<div class="field"><label>模型文件路径（本机 .bin）</label><input id="asrModelPath" value="'+esc(a.paths.modelPath)+'" placeholder="ggml-small.bin 的完整路径"></div>'
+    +'</div><div class="row"><button class="btn" onclick="saveAsr()">保存引擎设置</button><span style="font-size:12px;color:var(--muted)">写入 asr-config.json（已 gitignore）</span></div>';
+  el('asrNote').innerHTML='<b>产品判断：</b>服务端 ASR 好做但不一定划算。键盘听写由 iOS 系统提供，中文识别质量最好、零延迟、零成本、零隐私风险；自建 whisper 要装依赖 + 下载模型（small 约 500MB），云 API 要密钥和费用且语音出网。所以默认关闭，只在你需要「长语音 / 自定义热词 / 离线转写 / 唤醒词」时才启用。';
+  el('asrTestBtn').disabled=!a.ready;
+}
+function renderFinal(){
+  if(!S)return;
+  var items=[
+    ['开机自启',S.launchd&&S.launchedByLaunchd],
+    ['辅助功能授权',S.accessibility],
+    ['固定 .local 入口（已确认）',!!DONE[3]],
+    ['证书覆盖当前 IP',S.cert.exists&&S.cert.coversCurrentIp],
+    ['解析链路正常',!!window.LB_PARSE_OK],
+    ['真机试跑通过',!!window.LB_RUN_OK]
+  ];
+  var ok=items.filter(function(x){return x[1];}).length;
+  el('finalList').innerHTML=items.map(function(x){
+    return '<div class="chk"><span class="dot" style="background:'+(x[1]?'var(--ok)':'#C9C5BC')+'">'+(x[1]?'✓':'·')+'</span><span>'+esc(x[0])+'</span>'+pill(x[1]?'ok':'idle',x[1]?'完成':'可跳过')+'</div>';
+  }).join('');
+  el('finalBox').innerHTML='<b>'+ok+' / '+items.length+' 项就绪。</b>'+(ok>=4?'核心链路已经配好，可以开始用了。证书 / 试跑属于可选增强，不影响文字遥控。':'建议回到前面把标灰的必做项补完。');
+  el('openPhone').href=S.links.local;
+}
+function render(){renderNav();if(!S)return;renderChecks();renderAuto();renderPerm();renderLinks();renderVoice();renderFinal();}
+async function refresh(){try{S=await api('/api/setup/status');hideBanner();render();if(step===5&&!window.LB_PARSE_OK)selftest();}catch(e){showBanner('err','读取本机状态失败：'+e.message+'。请在 Mac 本机浏览器打开 http://localhost:8787/setup');}}
+async function autostart(action){
+  var b=el('autoBtn');if(b)b.disabled=true;
+  try{
+    var d=await api('/api/setup/autostart',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})});
+    if(!d.ok)throw new Error(d.output||d.error||'脚本执行失败');
+    showBanner('ok','已安装开机自启，正在交接给 launchd，页面约 3 秒后自动刷新…');
+    DONE[1]=true;saveState();
+    setTimeout(function(){location.reload();},3200);
+  }catch(e){showBanner('err','操作失败：'+e.message);if(b)b.disabled=false;}
+}
+async function openPerm(){try{await api('/api/accessibility',{method:'POST'});showBanner('info','已打开系统设置。授权后请完全退出该程序再重开，然后点「重新检测」。');}catch(e){showBanner('err','打开失败：'+e.message);}}
+async function regenCert(){
+  if(!confirm('重签证书会生成新的自签证书，手机需要重新安装 cert.crt 并重新开启完全信任。继续？'))return;
+  try{
+    var d=await api('/api/setup/cert',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    if(!d.ok)throw new Error(d.output||d.error||'重签失败');
+    showBanner('ok','证书已重签。请点「重载服务」生效，并让手机重新安装证书。');
+    await refresh();
+  }catch(e){showBanner('err','重签失败：'+e.message);}
+}
+async function doReload(e){
+  if(e)e.preventDefault();
+  if(!confirm('重载服务？页面会在约 2 秒后自动刷新。'))return;
+  try{await api('/api/reload',{method:'POST'});showBanner('ok','正在重载…');setTimeout(function(){location.reload();},2200);}catch(err){showBanner('err','重载失败：'+err.message);}
+}
+function copyUrl(btn){
+  var t=btn.parentNode.parentNode.querySelector('code').textContent;
+  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t).then(function(){showBanner('ok','已复制：'+t.slice(0,46)+'…');},function(){fallbackCopy(t);});}
+  else fallbackCopy(t);
+}
+function fallbackCopy(t){var a=document.createElement('textarea');a.value=t;document.body.appendChild(a);a.select();try{document.execCommand('copy');showBanner('ok','已复制');}catch(e){showBanner('err','复制失败，请长按选择文本');}document.body.removeChild(a);}
+async function saveAsr(){
+  var d={provider:el('asrProvider').value,baseUrl:el('asrBase').value.trim(),apiKey:el('asrKey').value.trim(),model:el('asrModel').value.trim(),whisperBin:el('asrBin').value.trim(),whisperModel:el('asrModelPath').value.trim()};
+  try{var r=await api('/api/asr/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});showBanner('ok','已保存，当前引擎：'+r.provider);await refresh();}
+  catch(e){showBanner('err','保存失败：'+e.message);}
+}
+async function testAsr(){
+  if(!S||!S.asr.ready){showBanner('warn','引擎未就绪，请先保存并确认依赖齐全');return;}
+  try{
+    var stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    var mime=MediaRecorder.isTypeSupported('audio/webm')?'audio/webm':'audio/mp4';
+    var chunks=[],rec=new MediaRecorder(stream,{mimeType:mime});
+    rec.ondataavailable=function(e){if(e.data.size)chunks.push(e.data);};
+    rec.onstop=async function(){
+      stream.getTracks().forEach(function(t){t.stop();});
+      el('asrResult').textContent='正在转写…';
+      try{
+        var r=await fetch('/api/asr',{method:'POST',headers:{'Content-Type':mime},body:new Blob(chunks,{type:mime})});
+        var d=await r.json();
+        el('asrResult').innerHTML=d.ok?('<b>识别结果：</b>'+esc(d.text||'（没听清）')):('<b>失败：</b>'+esc(d.error));
+      }catch(e){el('asrResult').textContent='失败：'+e.message;}
+    };
+    rec.start();showBanner('info','正在录音，说一句「打开访达」，3 秒后自动结束…');
+    setTimeout(function(){if(rec.state!=='inactive')rec.stop();},3000);
+  }catch(e){showBanner('err','无法录音：'+e.message+'（需在本机 localhost / HTTPS 打开，并允许麦克风）');}
+}
+async function selftest(){
+  el('parseOut').textContent='正在检测…';
+  try{
+    var d=await api('/api/normalize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'帮我在 B 站搜一下大模型微调'})});
+    window.LB_PARSE_OK=true;
+    el('parseOut').innerHTML=kv('你说的',esc(d.raw),'')+kv('龙虾脑理解成','<b>'+esc(d.normalized)+'</b>',pill('ok','解析链路正常'));
+  }catch(e){window.LB_PARSE_OK=false;el('parseOut').innerHTML=box('err','解析演练失败：'+esc(e.message));}
+  renderFinal();
+}
+async function realRun(){
+  var btn=el('runBtn');btn.disabled=true;el('runOut').textContent='正在执行…';
+  try{
+    var d=await api('/api/task',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:'打开访达'})});
+    for(var i=0;i<24;i++){
+      await new Promise(function(r){setTimeout(r,350);});
+      var t=await api('/api/task/'+d.id);
+      if(t.status==='success'){window.LB_RUN_OK=true;el('runOut').innerHTML=pill('ok','成功')+' '+esc(t.result||'已完成');break;}
+      if(t.status==='failed'){el('runOut').innerHTML=pill('err','失败')+' '+esc(t.error||'执行失败');break;}
+      if(i===23)el('runOut').textContent='仍在执行，可在 /dashboard 查看结果';
+    }
+  }catch(e){el('runOut').innerHTML=pill('err','失败')+' '+esc(e.message);}
+  btn.disabled=false;renderFinal();
+}
+function resetWizard(){DONE={};step=0;saveState();go(0);showBanner('info','向导已重置，检测数据保持实时。');}
+el('prev').onclick=function(){if(step>0)go(step-1);};
+el('skip').onclick=function(){if(step<5)go(step+1);else finish();};
+el('next').onclick=function(){DONE[step]=true;saveState();if(step<5)go(step+1);else finish();};
+function finish(){DONE[5]=true;saveState();renderNav();showBanner('ok','配置完成。点「打开手机遥控页」或把第 4 步的链接加到手机主屏。');}
+loadState();renderNav();refresh();
+</script></body></html>`;
 
 /* 启动辅助：带 EADDRINUSE 重试的监听（重载/重启时旧进程可能短暂占用端口） */
 function listenWithRetry(srv, port, host, label, onSuccess) {
@@ -2468,6 +3038,75 @@ const server = http.createServer((req, res) => {
       phoneLinkLocal: 'http://' + localName + ':' + HTTP_PORT + '/?t=' + AUTH_TOKEN,
     }));
   }
+  // ===== 首次配置向导：所有写操作只允许 Mac 本机发起 =====
+  if (req.method === 'GET' && url.pathname === '/api/setup/status') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden', hint: '请在 Mac 本机打开 /setup' })); }
+    (async () => {
+      try { res.end(JSON.stringify(await setupStatus())); }
+      catch (e) { res.statusCode = 500; res.end(JSON.stringify({ error: e.message })); }
+    })();
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/setup/autostart') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on('end', async () => {
+      let action = 'install';
+      try { action = (JSON.parse(body || '{}').action) || 'install'; } catch (e) {}
+      if (action !== 'install' && action !== 'handover') { res.statusCode = 400; return res.end(JSON.stringify({ ok: false, error: 'bad action' })); }
+      // 已托管时不能再跑 install 脚本（脚本会 unload/load，等于把正在服务的自己杀掉）
+      if (action === 'install' && process.env.LB_LAUNCHED) return res.end(JSON.stringify({ ok: false, error: '当前已由 launchd 托管，无需重复安装' }));
+      let r = { ok: true, output: '' };
+      if (action === 'install') {
+        r = await runSetupScript('install');
+        if (!r.ok) return res.end(JSON.stringify({ ok: false, output: r.output, error: r.error }));
+      }
+      // 确认 launchd 任务真的加载成功了，才敢让当前进程退出（否则服务会断）
+      let loaded = false;
+      try { execSync('launchctl list com.lobsterbrain', { encoding: 'utf8', timeout: 2500 }); loaded = true; } catch (e) {}
+      if (!loaded) return res.end(JSON.stringify({ ok: false, output: r.output, error: 'launchd 任务未加载成功，为安全起见没有交接当前进程' }));
+      if (process.env.LB_LAUNCHED) return res.end(JSON.stringify({ ok: true, handover: false, output: r.output, note: '当前已由 launchd 托管' }));
+      // 新进程已在 listenWithRetry 等待端口，旧进程退出后 300ms 内自动接管
+      res.end(JSON.stringify({ ok: true, handover: true, output: r.output, note: '服务正在交接给 launchd，约 1 秒后恢复' }));
+      setTimeout(() => process.exit(0), 900);
+    });
+    return;
+  }
+  if (req.method === 'POST' && url.pathname === '/api/setup/cert') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+    req.resume();
+    (async () => {
+      const oldIps = certSan().ips.filter(x => x !== '127.0.0.1');
+      const extra = Array.from(new Set([lanIP()].concat(oldIps))).filter(x => /^\d+\.\d+\.\d+\.\d+$/.test(x)).join(',');
+      const r = await runSetupScript('cert', extra ? [extra] : []);
+      res.end(Object.assign({}, r, { san: certSan().line, note: '重签后需重载服务，并让手机重新安装 cert.crt 并重新开启完全信任' }));
+    })();
+    return;
+  }
+  if (req.method === 'GET' && url.pathname === '/api/asr/status') return res.end(JSON.stringify(asrStatus()));
+  if (req.method === 'POST' && url.pathname === '/api/asr/config') {
+    if (!isLocalhost(req)) { res.statusCode = 403; return res.end(JSON.stringify({ error: 'forbidden' })); }
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+    req.on('end', () => {
+      let d = {};
+      try { d = JSON.parse(body || '{}'); } catch (e) { return res.end(JSON.stringify({ ok: false, error: 'bad body' })); }
+      const old = readAsrConfig();
+      const cfg = {
+        provider: ['none', 'whisper', 'openai'].includes(d.provider) ? d.provider : 'none',
+        baseUrl: String(d.baseUrl || '').trim(),
+        apiKey: String(d.apiKey || '').trim() || old.apiKey || '',
+        model: String(d.model || '').trim() || 'whisper-1',
+        whisperBin: String(d.whisperBin || '').trim(),
+        whisperModel: String(d.whisperModel || '').trim(),
+      };
+      try { writeAsrConfig(cfg); } catch (e) { return res.end(JSON.stringify({ ok: false, error: e.message })); }
+      const st = asrStatus();
+      res.end(JSON.stringify({ ok: true, provider: cfg.provider, ready: st.ready, reasons: st.reasons }));
+    });
+    return;
+  }
   // 软重载（本机或带令牌）
   if (req.method === 'POST' && url.pathname === '/api/reload') {
     if (!isLocalhost(req) && !checkAuth(url, req)) { res.statusCode = 401; return res.end(JSON.stringify({ error: 'unauthorized' })); }
@@ -2499,7 +3138,7 @@ const server = http.createServer((req, res) => {
         if (custom.length < 4) {
           // 未提供自定义密码 → 重新生成随机令牌（原有行为）
           AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
-          try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+          try { saveAuth(); } catch (e) {}
           return res.end(JSON.stringify({ ok: true, random: true, token: AUTH_TOKEN, phoneLink: 'https://' + lanIP() + ':' + HTTPS_PORT_OF() + '/?t=' + AUTH_TOKEN }));
         }
         // 用户自定义密码
@@ -2534,6 +3173,29 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && url.pathname === '/dashboard') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(DASH_PAGE); }
   if (req.method === 'GET' && url.pathname === '/config') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(CONFIG_PAGE); }
   if (req.method === 'GET' && url.pathname === '/manage') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MANAGE_PAGE); }
+  if (req.method === 'GET' && url.pathname === '/setup') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(SETUP_PAGE); }
+  // 服务端 ASR：手机录音 → 转文字 → 回到既有指令链路。默认 provider=none，会明确报错而不是假装识别
+  if (req.method === 'POST' && url.pathname === '/api/asr') {
+    const chunks = [];
+    let size = 0, dead = false;
+    req.on('data', c => { size += c.length; if (size > 12e6) { dead = true; req.destroy(); } else chunks.push(c); });
+    req.on('end', async () => {
+      if (dead) return;
+      try {
+        let buf = Buffer.concat(chunks);
+        let mime = (req.headers['content-type'] || '').split(';')[0].trim() || 'audio/webm';
+        if (mime === 'application/json') {
+          const j = JSON.parse(buf.toString('utf8'));
+          buf = Buffer.from(j.audio || '', 'base64');
+          mime = j.mime || 'audio/webm';
+        }
+        if (!buf.length) { res.statusCode = 400; return res.end(JSON.stringify({ ok: false, error: '没有收到音频' })); }
+        const text = await transcribeAudio(buf, mime);
+        res.end(JSON.stringify({ ok: true, text, provider: asrStatus().provider }));
+      } catch (e) { res.end(JSON.stringify({ ok: false, error: e.message })); }
+    });
+    return;
+  }
   if (req.method === 'GET' && url.pathname === '/api/tasks') return res.end(JSON.stringify(tasks.slice().reverse()));
   // 本机真实安装的应用清单（手机快捷应用由它动态生成）
   if (req.method === 'GET' && url.pathname === '/api/apps') {
@@ -2703,12 +3365,13 @@ const HTTPS_PORT = Number(PORT) + 1;
 // 用带重试的监听：软重载时新进程会与尚未退出的旧进程抢端口，需等待释放后重试
 listenWithRetry(server, HTTP_PORT, '0.0.0.0', '龙虾脑 HTTP', () => {
   const lan = lanIP();
-  console.log('龙虾脑 v3.3 已启动');
+  console.log('龙虾脑 v3.4 已启动');
   console.log('  手机端（文字输入）:  http://' + lan + ':' + HTTP_PORT);
   startHttps();
   const cfg = llmConfig();
   console.log('  智能解析: ' + (cfg.enabled ? '大模型 (' + cfg.model + ')' : '增强规则引擎（未配置 LLM）'));
   console.log('  能力: search / play / open(应用/文件夹/网站) / rating / system(音量/截图/锁屏…) / note / type(应用内输入)');
   console.log('  控制台: http://localhost:' + HTTP_PORT + '/manage  （开机自启 / 扫码连接 / 诊断）');
+  console.log('  首次配置: http://localhost:' + HTTP_PORT + '/setup  （向导：权限 / 自启 / 固定入口 / 证书 / 语音）');
   console.log('  配置页: http://localhost:' + HTTP_PORT + '/config  （接入 LLM + 辅助功能权限）');
 });
