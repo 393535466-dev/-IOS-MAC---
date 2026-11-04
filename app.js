@@ -154,21 +154,44 @@ function writeLLMConfig(cfg) {
 /* ---------------- 访问控制：局域网令牌（防止同 Wi-Fi 他人操控本机） ---------------- */
 const AUTH_FILE = path.join(__dirname, 'auth.json');
 let AUTH_TOKEN = '';
+let TRUST_LAN = true; // 默认开启：同一 Wi-Fi 下的手机免令牌直连（个人工具，安全可接受）
 function loadAuth() {
   try {
     const j = JSON.parse(fs.readFileSync(AUTH_FILE, 'utf8'));
-    if (j && j.token) { AUTH_TOKEN = j.token; return; }
+    if (j && j.token) { AUTH_TOKEN = j.token; }
+    if (j && typeof j.trustLan === 'boolean') TRUST_LAN = j.trustLan;
+    if (AUTH_TOKEN) return;
   } catch (e) {}
   // 首次运行：生成随机令牌并持久化
   AUTH_TOKEN = crypto.randomBytes(12).toString('hex');
-  try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN }, null, 2)); } catch (e) {}
+  saveAuth();
+}
+function saveAuth() {
+  try { fs.writeFileSync(AUTH_FILE, JSON.stringify({ token: AUTH_TOKEN, trustLan: TRUST_LAN }, null, 2)); } catch (e) {}
 }
 function isLocalhost(req) {
   const a = (req.socket && req.socket.remoteAddress) || '';
   return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1' || a === 'localhost';
 }
+function isPrivateLAN(req) {
+  const a = (req.socket && req.socket.remoteAddress) || '';
+  if (a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1') return false;
+  // IPv4 私有网段
+  const m = a.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (m) {
+    const [_, b1, b2] = m.map(Number);
+    if (b1 === 10) return true;
+    if (b1 === 172 && b2 >= 16 && b2 <= 31) return true;
+    if (b1 === 192 && b2 === 168) return true;
+    if (b1 === 169 && b2 === 254) return true; // 链路本地
+  }
+  // IPv6 唯一本地地址 fc00::/7
+  if (a.startsWith('fd') || a.startsWith('fc')) return true;
+  return false;
+}
 function checkAuth(url, req) {
-  if (isLocalhost(req)) return true; // 本机即本人，免令牌
+  if (isLocalhost(req)) return true;                 // 本机即本人，免令牌
+  if (TRUST_LAN && isPrivateLAN(req)) return true;   // 同一 Wi-Fi 信任设备，免令牌
   const t = url.searchParams.get('t') || (req.headers && req.headers['x-lb-token']) || '';
   return !!t && t === AUTH_TOKEN;
 }
@@ -1098,7 +1121,6 @@ function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'applic
 function showLock(){ var el=document.getElementById('lock'); if(el) el.style.display='flex'; }
 function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
 function probe(){
-  if(!LB_TOKEN){ showLock(); connStatus('未携带访问令牌：请在 Mac 控制台 /manage 复制带 ?t= 的「.local 手机链接」重新打开','err'); return; }
   connStatus('正在连接 Mac…');
   fetch('/api/tasks', {headers:{'x-lb-token':LB_TOKEN,'Content-Type':'application/json'}})
     .then(function(r){ if(r.ok){ connStatus('已连接 Mac ✓','ok'); setTimeout(function(){connStatus('');},1500); } else if(r.status===401){ onAuthFail(); } else { connStatus('服务返回异常（HTTP '+r.status+'）','err'); } })
@@ -1742,7 +1764,7 @@ const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
     <div class="linkbox"><div class="t">语音输入（HTTPS，需装证书）</div><code id="lkHttps"></code><button onclick="copyText('lkHttps')">复制</button></div>
   </div>
   <div id="qr"></div>
-  <div class="hint">用手机相机扫上方二维码即可直达（已含访问令牌，请勿外传）。若二维码为空，复制上方链接同样可用。</div>
+  <div class="hint">用手机相机扫上方二维码即可直达（已含访问令牌）。<b>当前已开启「局域网免令牌」，手机连同一 Wi-Fi 时即使不带 ?t= 也能直接用</b>；如需对外更安全，可在下方控制台关闭免令牌。若二维码为空，复制上方链接同样可用。</div>
 </div>
 
 <div class="card"><h2>连接诊断</h2>
@@ -1761,6 +1783,7 @@ const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
     <button onclick="location.href='/api/accessibility'">打开辅助功能设置</button>
     <button onclick="location.href='/dashboard'">运营看板</button>
     <button onclick="location.href='/config'">令牌/配置</button>
+    <button id="trustBtn" onclick="toggleTrust()">局域网免令牌：…</button>
   </div>
   <div id="msg" class="hint" style="margin-top:10px"></div>
 </div>
@@ -1770,6 +1793,16 @@ const MANAGE_PAGE = `<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8">
 function copyText(id){var t=document.getElementById(id).textContent;navigator.clipboard.writeText(t).then(function(){setMsg('已复制：'+t.slice(0,42)+'…')});}
 function setMsg(m){document.getElementById('msg').textContent=m;}
 function pill(ok,label){return '<span class="pill '+(ok?'ok':'err')+'">'+label+'</span>';}
+async function toggleTrust(){
+  try{
+    var cur=document.getElementById('dTrust');
+    var turningOn=cur && cur.textContent.indexOf('已关闭')>=0;
+    var r=await fetch('/api/trust',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({enabled:turningOn})});
+    var d=await r.json();
+    if(d.ok){ setMsg('局域网免令牌已'+(d.trustLan?'开启':'关闭')+'，手机现在'+(d.trustLan?'可免令牌直连':'需带 ?t= 令牌')); load(); }
+    else setMsg('切换失败：'+JSON.stringify(d));
+  }catch(e){ setMsg('切换失败：'+e.message); }
+}
 async function act(a){
   if(a==='stop' && !confirm('确定停止服务？停止后需重新启动才能连接。')) return;
   try{
@@ -1787,12 +1820,15 @@ async function load(){
     html+='<div class="kv"><span class="k">HTTP 端口</span><span class="v">'+d.httpPort+'</span></div>';
     html+='<div class="kv"><span class="k">HTTPS 端口</span><span class="v">'+d.httpsPort+'</span></div>';
     html+='<div class="kv"><span class="k">访问令牌</span><span class="v">'+d.token+'</span></div>';
+    html+='<div class="kv"><span class="k">局域网免令牌</span><span class="v" id="dTrust"></span></div>';
     document.getElementById('status').innerHTML=html;
     document.getElementById('lkHttp').textContent=d.phoneLinkLocal;
     document.getElementById('lkHttps').textContent=d.phoneLinkHttps;
     document.getElementById('dIp').textContent=d.lanIP+(d.ips&&d.ips.length>1?('（多网卡：'+d.ips.join(', ')+'）'):'');
     document.getElementById('dCert').innerHTML=d.hasCert?pill(true,'已生成'):pill(false,'缺失');
     document.getElementById('dLaunch').innerHTML=d.launchd?pill(true,'已启用'):pill(false,'未启用');
+    document.getElementById('dTrust').innerHTML=d.trustLan?pill(true,'已开启（同 Wi-Fi 免令牌直连）'):pill(false,'已关闭（需令牌）');
+    var tb=document.getElementById('trustBtn'); if(tb) tb.textContent=d.trustLan?'局域网免令牌：已开启（点此关闭）':'局域网免令牌：已关闭（点此开启）';
     try{
       var qr=qrcode(0,'M');qr.addData(d.phoneLinkLocal);qr.make();
       document.getElementById('qr').innerHTML=qr.createSvgTag({cellSize:5,margin:10,alt:'连接二维码'});
@@ -1889,6 +1925,7 @@ const server = http.createServer((req, res) => {
     return res.end(JSON.stringify({
       running: true, version: VERSION, pid: process.pid, uptime: Math.round(process.uptime()),
       lanIP: lanIP(), ips, httpPort: HTTP_PORT, httpsPort: HTTPS_PORT, token: AUTH_TOKEN, hasCert, launchd,
+      trustLan: TRUST_LAN,
       phoneLinkHttp: 'http://' + lanIP() + ':' + HTTP_PORT + '/?t=' + AUTH_TOKEN,
       phoneLinkHttps: 'https://' + lanIP() + ':' + HTTPS_PORT + '/?t=' + AUTH_TOKEN,
       phoneLinkLocal: 'http://' + localName + ':' + HTTP_PORT + '/?t=' + AUTH_TOKEN,
@@ -1938,6 +1975,17 @@ const server = http.createServer((req, res) => {
     if (!checkAuth(url, req)) {
       res.statusCode = 401;
       return res.end(JSON.stringify({ error: 'unauthorized', code: 401, hint: '请在 Mac 本机打开配置页获取手机链接，或在请求中携带令牌 ?t= 或头 x-lb-token' }));
+    }
+    if (url.pathname === '/api/trust' && req.method === 'POST') {
+      let body = '';
+      req.on('data', c => { body += c; if (body.length > 1e4) req.destroy(); });
+      req.on('end', () => {
+        let on;
+        try { const d = JSON.parse(body || '{}'); on = !!d.enabled; } catch (e) { return res.end(JSON.stringify({ ok: false, error: 'bad body' })); }
+        TRUST_LAN = on; saveAuth();
+        res.end(JSON.stringify({ ok: true, trustLan: TRUST_LAN }));
+      });
+      return;
     }
   }
   if (req.method === 'GET' && url.pathname === '/') { res.setHeader('Content-Type', 'text/html; charset=utf-8'); return res.end(MOBILE_PAGE); }
