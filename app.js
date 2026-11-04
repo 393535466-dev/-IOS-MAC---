@@ -1055,7 +1055,7 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 
 <div id="lock" style="display:none;position:fixed;inset:0;background:rgba(255,255,255,.97);z-index:100;flex-direction:column;align-items:center;justify-content:center;padding:24px">
   <div style="font-size:16px;font-weight:600;margin-bottom:6px">需要访问令牌</div>
-  <div style="font-size:13px;color:#888;margin-bottom:18px;text-align:center;line-height:1.6">龙虾脑已开启局域网保护。<br>请在 Mac 本机「配置」页复制手机链接，或输入令牌。</div>
+  <div style="font-size:13px;color:#888;margin-bottom:18px;text-align:center;line-height:1.6">龙虾脑已开启局域网保护。<br>请在 Mac 本机打开 <b style="color:#222">控制台 /manage</b>，复制带 <b style="color:#222">?t=</b> 的「.local 手机链接」重新打开；<br>或把下方令牌粘贴进来。</div>
   <input id="lockPwd" type="password" placeholder="访问令牌" style="width:100%;max-width:300px;border:1px solid #DDD;border-radius:10px;padding:12px;font-size:15px;outline:none;text-align:center" onkeydown="if(event.key==='Enter')doUnlock()">
   <button onclick="doUnlock()" style="margin-top:12px;width:100%;max-width:300px;padding:12px;border:none;border-radius:10px;background:#1A1A1A;color:#fff;font-size:15px;cursor:pointer">解锁</button>
 </div>
@@ -1322,6 +1322,7 @@ initVoice();
 renderMode();
 renderApps();
 (function(){var tg=document.getElementById('themeToggle');if(tg)tg.checked=(document.documentElement.getAttribute('data-theme')==='dark');})();
+if(!LB_TOKEN) showLock();
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
 (function(){
