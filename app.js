@@ -1085,9 +1085,25 @@ body{font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;backgro
 var LB_TOKEN = new URLSearchParams(location.search).get('t') || (function(){try{return localStorage.getItem('lb_token');}catch(e){return'';}})() || '';
 if (LB_TOKEN) { try { localStorage.setItem('lb_token', LB_TOKEN); } catch(e){} }
 ['cfg-fab','dash-fab'].forEach(function(id){var a=document.getElementById(id);if(a&&LB_TOKEN){var h=a.getAttribute('href').split('?')[0];a.href=h+'?t='+encodeURIComponent(LB_TOKEN);}});
-function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'application/json'}, o.headers||{}); if(LB_TOKEN) o.headers['x-lb-token']=LB_TOKEN; return fetch(p,o).then(function(r){ if(r.status===401) showLock(); return r; }); }
+function connStatus(html, type){
+  var el=document.getElementById('statusArea'); if(!el) return;
+  if(!html){ el.innerHTML=''; return; }
+  var color = type==='ok' ? '#0A7' : type==='err' ? '#D33' : '#E08A00';
+  var bg = type==='ok' ? '#EAF7EE' : type==='err' ? '#FDECEC' : '#FFF6E6';
+  var retry = type==='err' ? ' <a href="javascript:probe()" style="color:inherit;text-decoration:underline;margin-left:4px">重试</a>' : '';
+  el.innerHTML='<div style="font-size:12px;color:'+color+';text-align:center;padding:5px 10px;margin:2px 0;background:'+bg+';border-radius:8px;line-height:1.45">'+html+retry+'</div>';
+}
+function onAuthFail(){ try{ localStorage.removeItem('lb_token'); }catch(e){} LB_TOKEN=''; showLock(); connStatus('令牌无效或已变更：请在 Mac 控制台 /manage 复制带 ?t= 的新链接重新打开','err'); }
+function lbFetch(p, o){ o=o||{}; o.headers=Object.assign({'Content-Type':'application/json'}, o.headers||{}); if(LB_TOKEN) o.headers['x-lb-token']=LB_TOKEN; return fetch(p,o).then(function(r){ if(r.status===401) onAuthFail(); return r; }).catch(function(err){ connStatus('操作失败：无法连接 Mac 服务，请确认服务正在运行后重试','err'); throw err; }); }
 function showLock(){ var el=document.getElementById('lock'); if(el) el.style.display='flex'; }
 function doUnlock(){ var e=document.getElementById('lockPwd'); var v=e?e.value.trim():''; if(!v) return; LB_TOKEN=v; try{localStorage.setItem('lb_token',v);}catch(e){} location.search='?t='+encodeURIComponent(v); }
+function probe(){
+  if(!LB_TOKEN){ showLock(); connStatus('未携带访问令牌：请在 Mac 控制台 /manage 复制带 ?t= 的「.local 手机链接」重新打开','err'); return; }
+  connStatus('正在连接 Mac…');
+  fetch('/api/tasks', {headers:{'x-lb-token':LB_TOKEN,'Content-Type':'application/json'}})
+    .then(function(r){ if(r.ok){ connStatus('已连接 Mac ✓','ok'); setTimeout(function(){connStatus('');},1500); } else if(r.status===401){ onAuthFail(); } else { connStatus('服务返回异常（HTTP '+r.status+'）','err'); } })
+    .catch(function(){ connStatus('无法连接 Mac 服务：请确认 Mac 上的「龙虾脑」正在运行，然后刷新本页','err'); });
+}
 var cur=null,timer=null;
 var rec=null,recognizing=false,voiceReady=false;
 // 直输不再是粘性全局开关：默认只对「下一条」生效，发完自动回到指令模式。
@@ -1322,7 +1338,7 @@ initVoice();
 renderMode();
 renderApps();
 (function(){var tg=document.getElementById('themeToggle');if(tg)tg.checked=(document.documentElement.getAttribute('data-theme')==='dark');})();
-if(!LB_TOKEN) showLock();
+probe();
 
 /* ---- 触控板：手指滑动控制 Mac 鼠标（相对移动，轻点=点击）---- */
 (function(){
